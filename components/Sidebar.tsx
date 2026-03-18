@@ -15,6 +15,7 @@ import {
 import { createClient } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { useAdmin } from "@/lib/useAdmin";
 
 const navItems = [
   {
@@ -41,6 +42,7 @@ const navItems = [
     label: "Kosten",
     href: "/kosten",
     icon: DollarSign,
+    adminOnly: true,
   },
 ];
 
@@ -50,6 +52,11 @@ export default function Sidebar() {
   const supabase = createClient();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const { isAdmin } = useAdmin();
+
+  const filteredNavItems = navItems.filter(
+    (item) => !("adminOnly" in item && item.adminOnly) || isAdmin
+  );
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -83,7 +90,7 @@ export default function Sidebar() {
 
       {/* Navigation */}
       <nav className="flex-1 px-3 py-4 space-y-1">
-        {navItems.map((item) => {
+        {filteredNavItems.map((item) => {
           const Icon = item.icon;
           const active = isActive(item.href);
           return (

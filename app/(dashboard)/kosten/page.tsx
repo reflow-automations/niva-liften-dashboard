@@ -19,11 +19,15 @@ import {
 } from "recharts";
 import { format, parseISO, isValid, startOfWeek, startOfMonth } from "date-fns";
 import { nl } from "date-fns/locale";
+import { useAdmin } from "@/lib/useAdmin";
+import { useRouter } from "next/navigation";
 
 type Period = "week" | "maand";
 
 export default function KostenPage() {
   const supabase = createClient();
+  const router = useRouter();
+  const { isAdmin, loading: adminLoading } = useAdmin();
   const [calls, setCalls] = useState<CallLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState<Period>("week");
@@ -41,12 +45,17 @@ export default function KostenPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  if (loading) {
+  if (loading || adminLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="w-8 h-8 border-2 border-accent border-t-transparent rounded-full animate-spin" />
       </div>
     );
+  }
+
+  if (!isAdmin) {
+    router.push("/");
+    return null;
   }
 
   // Cost calculations

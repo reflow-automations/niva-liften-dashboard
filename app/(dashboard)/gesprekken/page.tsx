@@ -7,6 +7,7 @@ import { Search, Filter, Phone, ChevronRight } from "lucide-react";
 import { format, parseISO, isValid } from "date-fns";
 import { nl } from "date-fns/locale";
 import Link from "next/link";
+import { useAdmin } from "@/lib/useAdmin";
 
 const CALL_TYPE_OPTIONS = [
   { value: "", label: "Alle types" },
@@ -33,6 +34,7 @@ function formatDate(dateStr: string | null) {
 
 export default function GesprekkenPage() {
   const supabase = createClient();
+  const { isAdmin } = useAdmin();
   const [calls, setCalls] = useState<CallLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -154,9 +156,11 @@ export default function GesprekkenPage() {
                 <th className="px-6 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">
                   Duur
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">
-                  Kosten
-                </th>
+                {isAdmin && (
+                  <th className="px-6 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">
+                    Kosten
+                  </th>
+                )}
                 <th className="px-6 py-3" />
               </tr>
             </thead>
@@ -186,11 +190,13 @@ export default function GesprekkenPage() {
                   <td className="px-6 py-4 text-sm text-text-secondary">
                     {call.duration_seconds ? `${call.duration_seconds}s` : "\u2014"}
                   </td>
-                  <td className="px-6 py-4 text-sm text-text-secondary">
-                    {call.call_cost_usd
-                      ? `$${Number(call.call_cost_usd).toFixed(3)}`
-                      : "\u2014"}
-                  </td>
+                  {isAdmin && (
+                    <td className="px-6 py-4 text-sm text-text-secondary">
+                      {call.call_cost_usd
+                        ? `$${Number(call.call_cost_usd).toFixed(3)}`
+                        : "\u2014"}
+                    </td>
+                  )}
                   <td className="px-6 py-4">
                     <Link
                       href={`/gesprekken/${call.id}`}
@@ -204,7 +210,7 @@ export default function GesprekkenPage() {
               {filtered.length === 0 && (
                 <tr>
                   <td
-                    colSpan={6}
+                    colSpan={isAdmin ? 6 : 5}
                     className="px-6 py-12 text-center text-text-muted"
                   >
                     <Phone className="w-8 h-8 mx-auto mb-2 opacity-50" />

@@ -27,6 +27,7 @@ import Link from "next/link";
 import { format, parseISO, isValid, subDays } from "date-fns";
 import { nl } from "date-fns/locale";
 import KillSwitch from "@/components/KillSwitch";
+import { useAdmin } from "@/lib/useAdmin";
 
 const CALL_TYPE_COLORS: Record<string, string> = {
   test: "#6366f1",
@@ -82,6 +83,7 @@ function KPICard({
 
 export default function DashboardPage() {
   const supabase = createClient();
+  const { isAdmin } = useAdmin();
   const [liften, setLiften] = useState<Lift[]>([]);
   const [calls, setCalls] = useState<CallLog[]>([]);
   const [loading, setLoading] = useState(true);
@@ -204,13 +206,15 @@ export default function DashboardPage() {
           glow="glow-danger"
           delay="stagger-3"
         />
-        <KPICard
-          icon={DollarSign}
-          label="Totale kosten"
-          value={`$${totalKosten.toFixed(2)}`}
-          glow="glow-warning"
-          delay="stagger-4"
-        />
+        {isAdmin && (
+          <KPICard
+            icon={DollarSign}
+            label="Totale kosten"
+            value={`$${totalKosten.toFixed(2)}`}
+            glow="glow-warning"
+            delay="stagger-4"
+          />
+        )}
         <KPICard
           icon={Clock}
           label="Gem. duur"

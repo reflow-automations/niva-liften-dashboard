@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { format, parseISO, isValid } from "date-fns";
 import { nl } from "date-fns/locale";
+import { useAdmin } from "@/lib/useAdmin";
 
 const CALL_TYPE_LABELS: Record<string, string> = {
   test: "Test",
@@ -42,6 +43,7 @@ export default function GesprekDetailPage() {
   const params = useParams();
   const router = useRouter();
   const supabase = createClient();
+  const { isAdmin } = useAdmin();
   const [call, setCall] = useState<CallLog | null>(null);
   const [loading, setLoading] = useState(true);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
@@ -137,13 +139,17 @@ export default function GesprekDetailPage() {
       label: "Duur",
       value: call.duration_seconds ? `${call.duration_seconds} seconden` : "—",
     },
-    {
-      icon: DollarSign,
-      label: "Kosten",
-      value: call.call_cost_usd
-        ? `$${Number(call.call_cost_usd).toFixed(3)}`
-        : "—",
-    },
+    ...(isAdmin
+      ? [
+          {
+            icon: DollarSign,
+            label: "Kosten",
+            value: call.call_cost_usd
+              ? `$${Number(call.call_cost_usd).toFixed(3)}`
+              : "—",
+          },
+        ]
+      : []),
     {
       icon: Heart,
       label: "Sentiment",
