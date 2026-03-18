@@ -5,9 +5,9 @@ import { NextResponse } from "next/server";
 const TWILIO_WEBHOOK_URL =
   "https://killswitch-niva-liften-7141.twil.io/toggle-killswitch";
 
-async function getAuthenticatedUser() {
+async function getSupabaseClient() {
   const cookieStore = await cookies();
-  const supabase = createServerClient(
+  return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
@@ -23,76 +23,88 @@ async function getAuthenticatedUser() {
       },
     }
   );
+}
 
+// GET - Read killswitch status from Supabase
+export async function GET() {
+  const supabase = await getSupabaseClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  return user;
-}
 
-// GET - Check current killswitch status
-export async function GET() {
-  const user = await getAuthenticatedUser();
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   try {
-    const res = await fetch(TWILIO_WEBHOOK_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        secret: process.env.TWILIO_KILLSWITCH_SECRET,
-        action: "status",
-      }),
-    });
+    const { data, error } = await supabase
+      .from("app_settings")
+      .select("value")
+      .eq("key", "killswitch_active")
+      .single();
 
-    if (!res.ok) {
-      return NextResponse.json(
-        { error: "Failed to get killswitch status" },
-        { status: 502 }
-      );
+    if (error || !data) {
+      // Setting doesn't exist yet, default to false (AI active)
+      return NextResponse.json({ killswitch_active: false });
     }
 
-    const data = await res.json();
-    return NextResponse.json(data);
+    return NextResponse.json({
+      killswitch_active: data.value === "true",
+    });
   } catch {
-    return NextResponse.json(
-      { error: "Failed to reach Twilio" },
-      { status: 502 }
-    );
+    return NextResponse.json({ killswitch_active: false });
   }
 }
 
-// POST - Toggle killswitch
+// POST - Toggle killswitch via Twilio, then save state in Supabase
 export async function POST() {
-  const user = await getAuthenticatedUser();
+  const supabase = await getSupabaseClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   try {
+    // Call Twilio to toggle
     const res = await fetch(TWILIO_WEBHOOK_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         secret: process.env.TWILIO_KILLSWITCH_SECRET,
-        action: "toggle",
       }),
     });
 
     if (!res.ok) {
+      const text = await res.text();
       return NextResponse.json(
-        { error: "Failed to toggle killswitch" },
+        { error: "Twilio responded with error", details: text },
         { status: 502 }
       );
     }
 
     const data = await res.json();
+    const isActive = data.killswitch_active ?? false;
+
+    // Save state in Supabase for future GET requests
+    await supabase.from("app_settings").upsert(
+      {
+        key: "killswitch_active",
+        value: String(isActive),
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "key" }
+    );
+
     return NextResponse.json(data);
-  } catch {
+  } catch (err) {
     return NextResponse.json(
-      { error: "Failed to reach Twilio" },
+      {
+        error: "Failed to reach Twilio",
+        details: err instanceof Error ? err.message : "Unknown error",
+      },
       { status: 502 }
     );
   }
