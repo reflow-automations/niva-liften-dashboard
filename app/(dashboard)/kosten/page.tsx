@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase";
 import type { CallLog } from "@/lib/types";
-import { DollarSign, TrendingUp, TrendingDown, BarChart3 } from "lucide-react";
+import { DollarSign, TrendingUp, TrendingDown, BarChart3, Calendar } from "lucide-react";
 import {
   BarChart,
   Bar,
@@ -14,13 +14,14 @@ import {
   ResponsiveContainer,
   LineChart,
   Line,
-  Area,
   AreaChart,
+  Area,
 } from "recharts";
-import { format, parseISO, isValid, startOfWeek, startOfMonth } from "date-fns";
+import { format, parseISO, isValid, startOfWeek, startOfMonth, isWithinInterval, startOfDay, endOfDay } from "date-fns";
 import { nl } from "date-fns/locale";
 import { useAdmin } from "@/lib/useAdmin";
 import { useRouter } from "next/navigation";
+import { getCallDuration } from "@/lib/utils";
 
 type Period = "week" | "maand";
 
@@ -28,9 +29,11 @@ export default function KostenPage() {
   const supabase = createClient();
   const router = useRouter();
   const { isAdmin, loading: adminLoading } = useAdmin();
-  const [calls, setCalls] = useState<CallLog[]>([]);
+  const [allCalls, setAllCalls] = useState<CallLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState<Period>("week");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
 
   useEffect(() => {
     async function fetchCalls() {
@@ -38,7 +41,7 @@ export default function KostenPage() {
         .from("call_logs")
         .select("*")
         .order("created_at", { ascending: true });
-      setCalls(data || []);
+      setAllCalls(data || []);
       setLoading(false);
     }
     fetchCalls();
@@ -58,6 +61,20 @@ export default function KostenPage() {
     return null;
   }
 
+  // Filter calls by date range
+  const calls = allCalls.filter((call) => {
+    if (!startDate && !endDate) return true;
+    const dateStr = call.start_time || call.created_at;
+    if (!dateStr) return false;
+    const d = parseISO(dateStr);
+    if (!isValid(d)) return false;
+
+    const start = startDate ? startOfDay(parseISO(startDate)) : new Date(0);
+    const end = endDate ? endOfDay(parseISO(endDate)) : new Date(2099, 0, 1);
+
+    return isWithinInterval(d, { start, end });
+  });
+
   // Cost calculations
   const totalCost = calls.reduce(
     (sum, c) => sum + (Number(c.call_cost_usd) || 0),
@@ -72,6 +89,12 @@ export default function KostenPage() {
     ...callsWithCost.map((c) => Number(c.call_cost_usd) || 0),
     0
   );
+
+  // Total minutes
+  const totalMinutes = calls.reduce((sum, c) => {
+    const dur = getCallDuration(c);
+    return sum + (dur ? dur / 60 : 0);
+  }, 0);
 
   // Group costs by period
   const groupedCosts = calls.reduce(
@@ -117,16 +140,12 @@ export default function KostenPage() {
 
   const typeLabels: Record<string, string> = {
     test: "Test",
-    test_automatisch: "Auto-test",
     noodoproep: "Noodoproep",
-    onbekend: "Onbekend",
   };
 
   const typeColors: Record<string, string> = {
     test: "#6366f1",
-    test_automatisch: "#3b82f6",
     noodoproep: "#ef4444",
-    onbekend: "#6b7280",
   };
 
   const costByTypeData = Object.entries(costByType).map(([type, cost]) => ({
@@ -134,6 +153,8 @@ export default function KostenPage() {
     kosten: Math.round(cost * 1000) / 1000,
     fill: typeColors[type] || "#6b7280",
   }));
+
+  const hasDateFilter = startDate || endDate;
 
   return (
     <div className="space-y-8">
@@ -145,8 +166,54 @@ export default function KostenPage() {
         </p>
       </div>
 
+      {/* Date Range Filter */}
+      <div className="glass-card p-5">
+        <div className="flex flex-wrap items-end gap-4">
+          <div className="flex items-center gap-2">
+            <Calendar className="w-4 h-4 text-text-muted" />
+            <span className="text-sm font-medium text-text-secondary">Periode:</span>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <div>
+              <label className="block text-xs text-text-muted mb-1">Van</label>
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="px-3 py-2 rounded-xl bg-surface-hover border border-border text-text-primary text-sm focus:outline-none focus:border-accent cursor-pointer"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-text-muted mb-1">Tot</label>
+              <input
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                className="px-3 py-2 rounded-xl bg-surface-hover border border-border text-text-primary text-sm focus:outline-none focus:border-accent cursor-pointer"
+              />
+            </div>
+            {hasDateFilter && (
+              <button
+                onClick={() => {
+                  setStartDate("");
+                  setEndDate("");
+                }}
+                className="text-sm text-accent hover:text-accent-hover transition-colors cursor-pointer mt-5"
+              >
+                Wis filter
+              </button>
+            )}
+          </div>
+          {hasDateFilter && (
+            <span className="text-xs text-text-muted mt-5">
+              {calls.length} van {allCalls.length} calls
+            </span>
+          )}
+        </div>
+      </div>
+
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         <div className="glass-card p-5 glow-warning">
           <div className="flex items-center gap-2 mb-1">
             <DollarSign className="w-4 h-4 text-warning" />
@@ -160,7 +227,7 @@ export default function KostenPage() {
           <div className="flex items-center gap-2 mb-1">
             <TrendingUp className="w-4 h-4 text-text-secondary" />
             <span className="text-sm text-text-secondary">
-              Gemiddeld per call
+              Gem. per call
             </span>
           </div>
           <p className="text-3xl font-bold">${avgCost.toFixed(3)}</p>
@@ -178,6 +245,13 @@ export default function KostenPage() {
             <span className="text-sm text-text-secondary">Betaalde calls</span>
           </div>
           <p className="text-3xl font-bold">{callsWithCost.length}</p>
+        </div>
+        <div className="glass-card p-5">
+          <div className="flex items-center gap-2 mb-1">
+            <TrendingUp className="w-4 h-4 text-text-secondary" />
+            <span className="text-sm text-text-secondary">Totaal minuten</span>
+          </div>
+          <p className="text-3xl font-bold">{totalMinutes.toFixed(1)}</p>
         </div>
       </div>
 
@@ -237,7 +311,7 @@ export default function KostenPage() {
                   borderRadius: "12px",
                   color: "#f0f0f5",
                 }}
-                formatter={(value: any) => [`$${Number(value).toFixed(3)}`, "Kosten"]}
+                formatter={(value: number) => [`$${Number(value).toFixed(3)}`, "Kosten"]}
               />
               <Area
                 type="monotone"
@@ -251,7 +325,7 @@ export default function KostenPage() {
         </div>
       </div>
 
-      {/* Cost by type */}
+      {/* Cost by type + Calls per period */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="glass-card p-6">
           <h2 className="text-lg font-semibold mb-4">Kosten per call type</h2>
@@ -281,7 +355,7 @@ export default function KostenPage() {
                     borderRadius: "12px",
                     color: "#f0f0f5",
                   }}
-                  formatter={(value: any) => [
+                  formatter={(value: number) => [
                     `$${Number(value).toFixed(3)}`,
                     "Kosten",
                   ]}
@@ -300,7 +374,6 @@ export default function KostenPage() {
           </div>
         </div>
 
-        {/* Calls per period */}
         <div className="glass-card p-6">
           <h2 className="text-lg font-semibold mb-4">Aantal calls per {period}</h2>
           <div className="h-64">
