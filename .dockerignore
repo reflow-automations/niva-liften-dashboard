@@ -1,0 +1,12 @@
+node_modules
+.next
+.git
+.gitignore
+*.md
+.env.local
+.env*.local
+Dockerfile
+.dockerignore
+content vanuit andere agent
+CONTEXT_VOOR_NIEUWE_CHAT.md
+RLS_POLICIES.sql
