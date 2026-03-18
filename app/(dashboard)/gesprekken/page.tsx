@@ -11,54 +11,23 @@ import Link from "next/link";
 const CALL_TYPE_OPTIONS = [
   { value: "", label: "Alle types" },
   { value: "test", label: "Test" },
-  { value: "test_automatisch", label: "Auto-test" },
   { value: "noodoproep", label: "Noodoproep" },
-  { value: "onbekend", label: "Onbekend" },
-];
-
-const STATUS_OPTIONS = [
-  { value: "", label: "Alle statussen" },
-  { value: "test_succes", label: "Test succes" },
-  { value: "noodoproep_actief", label: "Noodoproep actief" },
-  { value: "mens_geescaleerd", label: "Geëscaleerd" },
-  { value: "ai_afgehandeld", label: "AI afgehandeld" },
-  { value: "onbekend", label: "Onbekend" },
 ];
 
 const CALL_TYPE_COLORS: Record<string, string> = {
   test: "#6366f1",
-  test_automatisch: "#3b82f6",
   noodoproep: "#ef4444",
-  onbekend: "#6b7280",
 };
 
 const CALL_TYPE_LABELS: Record<string, string> = {
   test: "Test",
-  test_automatisch: "Auto-test",
   noodoproep: "Noodoproep",
-  onbekend: "Onbekend",
-};
-
-const STATUS_COLORS: Record<string, string> = {
-  test_succes: "text-success",
-  noodoproep_actief: "text-danger",
-  mens_geescaleerd: "text-warning",
-  ai_afgehandeld: "text-info",
-  onbekend: "text-text-muted",
-};
-
-const STATUS_LABELS: Record<string, string> = {
-  test_succes: "Test succes",
-  noodoproep_actief: "Noodoproep actief",
-  mens_geescaleerd: "Geëscaleerd",
-  ai_afgehandeld: "AI afgehandeld",
-  onbekend: "Onbekend",
 };
 
 function formatDate(dateStr: string | null) {
-  if (!dateStr) return "—";
+  if (!dateStr) return "\u2014";
   const d = parseISO(dateStr);
-  if (!isValid(d)) return "—";
+  if (!isValid(d)) return "\u2014";
   return format(d, "d MMM yyyy, HH:mm", { locale: nl });
 }
 
@@ -68,7 +37,6 @@ export default function GesprekkenPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
-  const [statusFilter, setStatusFilter] = useState("");
   const [showFilters, setShowFilters] = useState(false);
 
   useEffect(() => {
@@ -86,7 +54,6 @@ export default function GesprekkenPage() {
 
   const filtered = calls.filter((call) => {
     if (typeFilter && call.call_type !== typeFilter) return false;
-    if (statusFilter && call.status !== statusFilter) return false;
     if (search) {
       const q = search.toLowerCase();
       return (
@@ -132,14 +99,14 @@ export default function GesprekkenPage() {
         <button
           onClick={() => setShowFilters(!showFilters)}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border transition-all cursor-pointer ${
-            showFilters || typeFilter || statusFilter
+            showFilters || typeFilter
               ? "bg-accent-muted border-accent text-accent"
               : "bg-surface border-border text-text-secondary hover:text-text-primary"
           }`}
         >
           <Filter className="w-4 h-4" />
           Filters
-          {(typeFilter || statusFilter) && (
+          {typeFilter && (
             <span className="w-2 h-2 rounded-full bg-accent" />
           )}
         </button>
@@ -158,23 +125,9 @@ export default function GesprekkenPage() {
               </option>
             ))}
           </select>
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="px-3 py-2 rounded-xl bg-surface-hover border border-border text-text-primary text-sm focus:outline-none focus:border-accent cursor-pointer"
-          >
-            {STATUS_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-          {(typeFilter || statusFilter) && (
+          {typeFilter && (
             <button
-              onClick={() => {
-                setTypeFilter("");
-                setStatusFilter("");
-              }}
+              onClick={() => setTypeFilter("")}
               className="text-sm text-accent hover:text-accent-hover transition-colors cursor-pointer"
             >
               Wis filters
@@ -199,9 +152,6 @@ export default function GesprekkenPage() {
                   Type
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">
-                  Status
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">
                   Duur
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">
@@ -220,33 +170,26 @@ export default function GesprekkenPage() {
                     {formatDate(call.start_time || call.created_at)}
                   </td>
                   <td className="px-6 py-4 text-sm text-text-secondary max-w-[200px] truncate">
-                    {call.lifts?.bedrijf || call.lifts?.address || "—"}
+                    {call.lifts?.bedrijf || call.lifts?.address || "\u2014"}
                   </td>
                   <td className="px-6 py-4">
                     <span
                       className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
                       style={{
-                        backgroundColor: `${CALL_TYPE_COLORS[call.call_type]}20`,
-                        color: CALL_TYPE_COLORS[call.call_type],
+                        backgroundColor: `${CALL_TYPE_COLORS[call.call_type] || "#6b7280"}20`,
+                        color: CALL_TYPE_COLORS[call.call_type] || "#6b7280",
                       }}
                     >
                       {CALL_TYPE_LABELS[call.call_type] || call.call_type}
                     </span>
                   </td>
-                  <td className="px-6 py-4">
-                    <span
-                      className={`text-sm font-medium ${STATUS_COLORS[call.status] || "text-text-muted"}`}
-                    >
-                      {STATUS_LABELS[call.status] || call.status}
-                    </span>
-                  </td>
                   <td className="px-6 py-4 text-sm text-text-secondary">
-                    {call.duration_seconds ? `${call.duration_seconds}s` : "—"}
+                    {call.duration_seconds ? `${call.duration_seconds}s` : "\u2014"}
                   </td>
                   <td className="px-6 py-4 text-sm text-text-secondary">
                     {call.call_cost_usd
                       ? `$${Number(call.call_cost_usd).toFixed(3)}`
-                      : "—"}
+                      : "\u2014"}
                   </td>
                   <td className="px-6 py-4">
                     <Link
@@ -261,7 +204,7 @@ export default function GesprekkenPage() {
               {filtered.length === 0 && (
                 <tr>
                   <td
-                    colSpan={7}
+                    colSpan={6}
                     className="px-6 py-12 text-center text-text-muted"
                   >
                     <Phone className="w-8 h-8 mx-auto mb-2 opacity-50" />

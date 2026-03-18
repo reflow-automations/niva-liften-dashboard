@@ -16,8 +16,7 @@ export interface CallLog {
   call_sid: string;
   retell_call_id: string | null;
   trace_id: string | null;
-  call_type: "test_automatisch" | "test" | "noodoproep" | "onbekend";
-  status: "test_succes" | "noodoproep_actief" | "mens_geescaleerd" | "ai_afgehandeld" | "onbekend";
+  call_type: "test" | "noodoproep";
   from_number: string | null;
   start_time: string | null;
   end_time: string | null;
@@ -40,12 +39,4 @@ export interface CallLog {
   lifts?: Lift;
 }
 
-export interface Noodoproep {
-  id: string;
-  locatie: string;
-  datum: string;
-  created_at: string;
-}
-
 export type CallType = CallLog["call_type"];
-export type CallStatus = CallLog["status"];

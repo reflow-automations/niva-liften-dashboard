@@ -2,13 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase";
-import type { CallLog, Lift, Noodoproep } from "@/lib/types";
+import type { CallLog, Lift } from "@/lib/types";
 import {
   Building2,
   Phone,
   AlertTriangle,
   DollarSign,
-  Activity,
   Clock,
   TrendingUp,
 } from "lucide-react";
@@ -30,38 +29,18 @@ import { nl } from "date-fns/locale";
 
 const CALL_TYPE_COLORS: Record<string, string> = {
   test: "#6366f1",
-  test_automatisch: "#3b82f6",
   noodoproep: "#ef4444",
-  onbekend: "#6b7280",
 };
 
 const CALL_TYPE_LABELS: Record<string, string> = {
   test: "Test",
-  test_automatisch: "Auto-test",
   noodoproep: "Noodoproep",
-  onbekend: "Onbekend",
-};
-
-const STATUS_COLORS: Record<string, string> = {
-  test_succes: "text-success",
-  noodoproep_actief: "text-danger",
-  mens_geescaleerd: "text-warning",
-  ai_afgehandeld: "text-info",
-  onbekend: "text-text-muted",
-};
-
-const STATUS_LABELS: Record<string, string> = {
-  test_succes: "Test succes",
-  noodoproep_actief: "Noodoproep actief",
-  mens_geescaleerd: "Geëscaleerd",
-  ai_afgehandeld: "AI afgehandeld",
-  onbekend: "Onbekend",
 };
 
 function formatDate(dateStr: string | null) {
-  if (!dateStr) return "—";
+  if (!dateStr) return "\u2014";
   const d = parseISO(dateStr);
-  if (!isValid(d)) return "—";
+  if (!isValid(d)) return "\u2014";
   return format(d, "d MMM yyyy, HH:mm", { locale: nl });
 }
 
@@ -104,24 +83,21 @@ export default function DashboardPage() {
   const supabase = createClient();
   const [liften, setLiften] = useState<Lift[]>([]);
   const [calls, setCalls] = useState<CallLog[]>([]);
-  const [noodoproepen, setNoodoproepen] = useState<Noodoproep[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function fetchData() {
-      const [liftenRes, callsRes, noodRes] = await Promise.all([
+      const [liftenRes, callsRes] = await Promise.all([
         supabase.from("lifts").select("*"),
         supabase
           .from("call_logs")
           .select("*, lifts(*)")
           .order("created_at", { ascending: false })
           .limit(50),
-        supabase.from("noodoproepen").select("*"),
       ]);
 
       setLiften(liftenRes.data || []);
       setCalls(callsRes.data || []);
-      setNoodoproepen(noodRes.data || []);
       setLoading(false);
     }
     fetchData();
@@ -145,16 +121,17 @@ export default function DashboardPage() {
     const now = new Date();
     return d.toDateString() === now.toDateString();
   }).length;
-  const totalNoodoproepen = noodoproepen.length;
+  const totalNoodoproepen = calls.filter((c) => c.call_type === "noodoproep").length;
   const totalKosten = calls.reduce(
     (sum, c) => sum + (Number(c.call_cost_usd) || 0),
     0
   );
+  const callsWithDuration = calls.filter((c) => c.duration_seconds);
   const avgDuration =
-    calls.length > 0
+    callsWithDuration.length > 0
       ? Math.round(
-          calls.reduce((sum, c) => sum + (c.duration_seconds || 0), 0) /
-            calls.filter((c) => c.duration_seconds).length
+          callsWithDuration.reduce((sum, c) => sum + (c.duration_seconds || 0), 0) /
+            callsWithDuration.length
         )
       : 0;
 
@@ -346,7 +323,7 @@ export default function DashboardPage() {
             href="/gesprekken"
             className="text-sm text-accent hover:text-accent-hover transition-colors"
           >
-            Alle gesprekken →
+            Alle gesprekken &rarr;
           </Link>
         </div>
         <div className="overflow-x-auto">
@@ -361,9 +338,6 @@ export default function DashboardPage() {
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">
                   Type
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">
-                  Status
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">
                   Duur
@@ -385,37 +359,30 @@ export default function DashboardPage() {
                     </Link>
                   </td>
                   <td className="px-6 py-4 text-sm text-text-secondary">
-                    {call.lifts?.bedrijf || call.lifts?.address || "—"}
+                    {call.lifts?.bedrijf || call.lifts?.address || "\u2014"}
                   </td>
                   <td className="px-6 py-4">
                     <span
                       className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
                       style={{
-                        backgroundColor: `${CALL_TYPE_COLORS[call.call_type]}20`,
-                        color: CALL_TYPE_COLORS[call.call_type],
+                        backgroundColor: `${CALL_TYPE_COLORS[call.call_type] || "#6b7280"}20`,
+                        color: CALL_TYPE_COLORS[call.call_type] || "#6b7280",
                       }}
                     >
                       {CALL_TYPE_LABELS[call.call_type] || call.call_type}
                     </span>
                   </td>
-                  <td className="px-6 py-4">
-                    <span
-                      className={`text-sm font-medium ${STATUS_COLORS[call.status] || "text-text-muted"}`}
-                    >
-                      {STATUS_LABELS[call.status] || call.status}
-                    </span>
-                  </td>
                   <td className="px-6 py-4 text-sm text-text-secondary">
                     {call.duration_seconds
                       ? `${call.duration_seconds}s`
-                      : "—"}
+                      : "\u2014"}
                   </td>
                 </tr>
               ))}
               {recentCalls.length === 0 && (
                 <tr>
                   <td
-                    colSpan={5}
+                    colSpan={4}
                     className="px-6 py-12 text-center text-text-muted"
                   >
                     Nog geen gesprekken geregistreerd

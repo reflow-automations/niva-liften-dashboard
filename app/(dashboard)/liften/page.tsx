@@ -17,7 +17,7 @@ function getTestStatus(lastTestAt: string | null): {
   }
   const d = parseISO(lastTestAt);
   if (!isValid(d)) return { label: "Onbekend", color: "text-text-muted", bgColor: "bg-surface-hover" };
-  
+
   const daysSince = differenceInDays(new Date(), d);
   if (daysSince <= 3) {
     return { label: "Recent getest", color: "text-success", bgColor: "bg-success-muted" };
@@ -33,6 +33,9 @@ export default function LiftenPage() {
   const [liften, setLiften] = useState<Lift[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"alle" | "actief" | "inactief">("alle");
+  const [testFilter, setTestFilter] = useState<"alle" | "recent" | "verouderd" | "nooit">("alle");
+  const [toggling, setToggling] = useState<string | null>(null);
 
   useEffect(() => {
     async function fetchLiften() {
@@ -47,15 +50,57 @@ export default function LiftenPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const handleToggleActive = async (lift: Lift) => {
+    setToggling(lift.id);
+    const newStatus = !lift.is_active;
+    const { error } = await supabase
+      .from("lifts")
+      .update({ is_active: newStatus })
+      .eq("id", lift.id);
+
+    if (!error) {
+      setLiften((prev) =>
+        prev.map((l) => (l.id === lift.id ? { ...l, is_active: newStatus } : l))
+      );
+    }
+    setToggling(null);
+  };
+
   const filtered = liften.filter((lift) => {
+    // Search filter
     const q = search.toLowerCase();
-    return (
+    const matchesSearch =
       lift.bedrijf?.toLowerCase().includes(q) ||
       lift.address?.toLowerCase().includes(q) ||
       lift.stad?.toLowerCase().includes(q) ||
       lift.postcode?.toLowerCase().includes(q) ||
-      lift.phone_number?.includes(q)
-    );
+      lift.phone_number?.includes(q);
+
+    // Status filter
+    const matchesStatus =
+      statusFilter === "alle" ||
+      (statusFilter === "actief" && lift.is_active) ||
+      (statusFilter === "inactief" && !lift.is_active);
+
+    // Test filter
+    let matchesTest = true;
+    if (testFilter !== "alle") {
+      if (!lift.last_test_at) {
+        matchesTest = testFilter === "nooit";
+      } else {
+        const d = parseISO(lift.last_test_at);
+        if (!isValid(d)) {
+          matchesTest = testFilter === "nooit";
+        } else {
+          const daysSince = differenceInDays(new Date(), d);
+          if (testFilter === "recent") matchesTest = daysSince <= 3;
+          else if (testFilter === "verouderd") matchesTest = daysSince > 30;
+          else matchesTest = false;
+        }
+      }
+    }
+
+    return matchesSearch && matchesStatus && matchesTest;
   });
 
   if (loading) {
@@ -88,6 +133,53 @@ export default function LiftenPage() {
         </div>
       </div>
 
+      {/* Filters */}
+      <div className="flex flex-wrap gap-3">
+        {/* Status filter */}
+        <div className="flex rounded-xl overflow-hidden border border-border">
+          {(["alle", "actief", "inactief"] as const).map((option) => (
+            <button
+              key={option}
+              onClick={() => setStatusFilter(option)}
+              className={`px-4 py-2 text-sm font-medium transition-colors cursor-pointer ${
+                statusFilter === option
+                  ? "bg-accent text-white"
+                  : "bg-surface text-text-secondary hover:bg-surface-hover"
+              }`}
+            >
+              {option.charAt(0).toUpperCase() + option.slice(1)}
+            </button>
+          ))}
+        </div>
+
+        {/* Test filter */}
+        <div className="flex rounded-xl overflow-hidden border border-border">
+          {([
+            { value: "alle", label: "Alle tests" },
+            { value: "recent", label: "Recent getest" },
+            { value: "verouderd", label: ">30 dagen" },
+            { value: "nooit", label: "Nooit getest" },
+          ] as const).map((option) => (
+            <button
+              key={option.value}
+              onClick={() => setTestFilter(option.value)}
+              className={`px-4 py-2 text-sm font-medium transition-colors cursor-pointer ${
+                testFilter === option.value
+                  ? "bg-accent text-white"
+                  : "bg-surface text-text-secondary hover:bg-surface-hover"
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Results count */}
+        <div className="flex items-center text-sm text-text-muted ml-auto">
+          {filtered.length} van {liften.length} liften
+        </div>
+      </div>
+
       {/* Lift Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
         {filtered.map((lift) => {
@@ -112,11 +204,18 @@ export default function LiftenPage() {
                     </div>
                   </div>
                 </div>
-                {lift.is_active ? (
-                  <CheckCircle2 className="w-5 h-5 text-success flex-shrink-0" />
-                ) : (
-                  <XCircle className="w-5 h-5 text-danger flex-shrink-0" />
-                )}
+                <button
+                  onClick={() => handleToggleActive(lift)}
+                  disabled={toggling === lift.id}
+                  className="cursor-pointer flex-shrink-0 transition-transform hover:scale-110 disabled:opacity-50"
+                  title={lift.is_active ? "Klik om te deactiveren" : "Klik om te activeren"}
+                >
+                  {lift.is_active ? (
+                    <CheckCircle2 className="w-5 h-5 text-success" />
+                  ) : (
+                    <XCircle className="w-5 h-5 text-danger" />
+                  )}
+                </button>
               </div>
 
               <div className="grid grid-cols-2 gap-3 text-sm">

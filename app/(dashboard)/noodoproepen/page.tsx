@@ -2,40 +2,32 @@
 
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase";
-import type { CallLog, Noodoproep } from "@/lib/types";
-import { AlertTriangle, MapPin, Clock, Phone } from "lucide-react";
+import type { CallLog } from "@/lib/types";
+import { AlertTriangle, Phone } from "lucide-react";
 import { format, parseISO, isValid } from "date-fns";
 import { nl } from "date-fns/locale";
 import Link from "next/link";
 
 function formatDate(dateStr: string | null) {
-  if (!dateStr) return "—";
+  if (!dateStr) return "\u2014";
   const d = parseISO(dateStr);
-  if (!isValid(d)) return "—";
+  if (!isValid(d)) return "\u2014";
   return format(d, "d MMM yyyy, HH:mm", { locale: nl });
 }
 
 export default function NoodoproepenPage() {
   const supabase = createClient();
-  const [noodoproepen, setNoodoproepen] = useState<Noodoproep[]>([]);
   const [noodCalls, setNoodCalls] = useState<CallLog[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function fetchData() {
-      const [noodRes, callsRes] = await Promise.all([
-        supabase
-          .from("noodoproepen")
-          .select("*")
-          .order("datum", { ascending: false }),
-        supabase
-          .from("call_logs")
-          .select("*, lifts(*)")
-          .eq("call_type", "noodoproep")
-          .order("created_at", { ascending: false }),
-      ]);
-      setNoodoproepen(noodRes.data || []);
-      setNoodCalls(callsRes.data || []);
+      const { data } = await supabase
+        .from("call_logs")
+        .select("*, lifts(*)")
+        .eq("call_type", "noodoproep")
+        .order("created_at", { ascending: false });
+      setNoodCalls(data || []);
       setLoading(false);
     }
     fetchData();
@@ -59,69 +51,29 @@ export default function NoodoproepenPage() {
           Noodoproepen
         </h1>
         <p className="text-text-secondary mt-1">
-          {noodoproepen.length} geregistreerde noodoproepen
+          {noodCalls.length} noodoproepen geregistreerd
         </p>
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="glass-card p-5 glow-danger">
           <p className="text-sm text-text-secondary">Totaal noodoproepen</p>
-          <p className="text-3xl font-bold mt-1 text-danger">{noodoproepen.length}</p>
+          <p className="text-3xl font-bold mt-1 text-danger">{noodCalls.length}</p>
         </div>
         <div className="glass-card p-5">
-          <p className="text-sm text-text-secondary">Noodoproep calls</p>
-          <p className="text-3xl font-bold mt-1">{noodCalls.length}</p>
-        </div>
-        <div className="glass-card p-5">
-          <p className="text-sm text-text-secondary">Geëscaleerd</p>
-          <p className="text-3xl font-bold mt-1 text-warning">
-            {noodCalls.filter((c) => c.status === "mens_geescaleerd").length}
+          <p className="text-sm text-text-secondary">Via AI agent</p>
+          <p className="text-3xl font-bold mt-1">
+            {noodCalls.filter((c) => c.transcript).length}
           </p>
+          <p className="text-xs text-text-muted mt-1">Gesprekken met transcript</p>
         </div>
       </div>
 
-      {/* Registered Noodoproepen */}
-      {noodoproepen.length > 0 && (
-        <div className="glass-card overflow-hidden">
-          <div className="p-6">
-            <h2 className="text-lg font-semibold">Geregistreerde noodoproepen</h2>
-          </div>
-          <div className="divide-y divide-border-subtle">
-            {noodoproepen.map((nood) => (
-              <div
-                key={nood.id}
-                className="px-6 py-4 flex items-center gap-4 hover:bg-surface-hover/50 transition-colors"
-              >
-                <div className="p-2.5 rounded-xl bg-danger-muted flex-shrink-0">
-                  <AlertTriangle className="w-5 h-5 text-danger" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <MapPin className="w-3.5 h-3.5 text-text-muted" />
-                    <span className="font-medium text-sm">
-                      {nood.locatie || "Onbekende locatie"}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2 mt-1">
-                    <Clock className="w-3.5 h-3.5 text-text-muted" />
-                    <span className="text-xs text-text-secondary">
-                      {formatDate(nood.datum)}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Noodoproep Calls */}
+      {/* Noodoproep Calls Table */}
       <div className="glass-card overflow-hidden">
         <div className="p-6">
-          <h2 className="text-lg font-semibold">
-            Noodoproep gesprekken uit call logs
-          </h2>
+          <h2 className="text-lg font-semibold">Alle noodoproepen</h2>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full">
@@ -131,10 +83,7 @@ export default function NoodoproepenPage() {
                   Datum
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">
-                  Locatie
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">
-                  Status
+                  Lift / Locatie
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">
                   Sentiment
@@ -155,30 +104,13 @@ export default function NoodoproepenPage() {
                     {formatDate(call.start_time || call.created_at)}
                   </td>
                   <td className="px-6 py-4 text-sm text-text-secondary">
-                    {call.lifts?.bedrijf || call.lifts?.address || "—"}
-                  </td>
-                  <td className="px-6 py-4">
-                    <span
-                      className={`text-sm font-medium ${
-                        call.status === "mens_geescaleerd"
-                          ? "text-warning"
-                          : call.status === "noodoproep_actief"
-                            ? "text-danger"
-                            : "text-text-secondary"
-                      }`}
-                    >
-                      {call.status === "mens_geescaleerd"
-                        ? "Geëscaleerd"
-                        : call.status === "noodoproep_actief"
-                          ? "Actief"
-                          : call.status || "—"}
-                    </span>
+                    {call.lifts?.bedrijf || call.lifts?.address || "\u2014"}
                   </td>
                   <td className="px-6 py-4 text-sm text-text-secondary">
-                    {call.sentiment || "—"}
+                    {call.sentiment || "\u2014"}
                   </td>
                   <td className="px-6 py-4 text-sm text-text-secondary">
-                    {call.duration_seconds ? `${call.duration_seconds}s` : "—"}
+                    {call.duration_seconds ? `${call.duration_seconds}s` : "\u2014"}
                   </td>
                   <td className="px-6 py-4">
                     <Link
@@ -193,11 +125,11 @@ export default function NoodoproepenPage() {
               {noodCalls.length === 0 && (
                 <tr>
                   <td
-                    colSpan={6}
+                    colSpan={5}
                     className="px-6 py-12 text-center text-text-muted"
                   >
                     <Phone className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                    Geen noodoproep-gesprekken gevonden
+                    Geen noodoproepen gevonden
                   </td>
                 </tr>
               )}

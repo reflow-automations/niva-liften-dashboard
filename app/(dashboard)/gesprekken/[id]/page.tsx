@@ -23,24 +23,12 @@ import { nl } from "date-fns/locale";
 
 const CALL_TYPE_LABELS: Record<string, string> = {
   test: "Test",
-  test_automatisch: "Auto-test",
   noodoproep: "Noodoproep",
-  onbekend: "Onbekend",
 };
 
 const CALL_TYPE_COLORS: Record<string, string> = {
   test: "#6366f1",
-  test_automatisch: "#3b82f6",
   noodoproep: "#ef4444",
-  onbekend: "#6b7280",
-};
-
-const STATUS_LABELS: Record<string, string> = {
-  test_succes: "Test succes",
-  noodoproep_actief: "Noodoproep actief",
-  mens_geescaleerd: "Geëscaleerd",
-  ai_afgehandeld: "AI afgehandeld",
-  onbekend: "Onbekend",
 };
 
 function formatDate(dateStr: string | null) {
@@ -214,7 +202,7 @@ export default function GesprekDetailPage() {
           {CALL_TYPE_LABELS[call.call_type] || call.call_type}
         </span>
         <span className="inline-flex items-center px-3 py-1.5 rounded-xl text-sm font-medium bg-surface-hover text-text-secondary">
-          {STATUS_LABELS[call.status] || call.status}
+          {call.call_type === "noodoproep" ? "Noodoproep" : "Test"}
         </span>
         {call.fallback_reason && (
           <span className="inline-flex items-center px-3 py-1.5 rounded-xl text-sm font-medium bg-warning-muted text-warning">
