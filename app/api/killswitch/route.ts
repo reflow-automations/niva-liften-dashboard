@@ -67,10 +67,10 @@ export async function POST() {
   try {
     const res = await fetch(TWILIO_TOGGLE_URL, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        secret: process.env.TWILIO_KILLSWITCH_SECRET,
-      }),
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        secret: process.env.TWILIO_KILLSWITCH_SECRET || "",
+      }).toString(),
     });
 
     if (!res.ok) {
