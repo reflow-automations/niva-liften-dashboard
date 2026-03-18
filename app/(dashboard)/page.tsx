@@ -28,6 +28,7 @@ import { format, parseISO, isValid, subDays } from "date-fns";
 import { nl } from "date-fns/locale";
 import KillSwitch from "@/components/KillSwitch";
 import { useAdmin } from "@/lib/useAdmin";
+import { getCallDuration, formatDuration } from "@/lib/utils";
 
 const CALL_TYPE_COLORS: Record<string, string> = {
   test: "#6366f1",
@@ -129,13 +130,10 @@ export default function DashboardPage() {
     (sum, c) => sum + (Number(c.call_cost_usd) || 0),
     0
   );
-  const callsWithDuration = calls.filter((c) => c.duration_seconds);
+  const callDurations = calls.map((c) => getCallDuration(c)).filter((d): d is number => d !== null);
   const avgDuration =
-    callsWithDuration.length > 0
-      ? Math.round(
-          callsWithDuration.reduce((sum, c) => sum + (c.duration_seconds || 0), 0) /
-            callsWithDuration.length
-        )
+    callDurations.length > 0
+      ? Math.round(callDurations.reduce((sum, d) => sum + d, 0) / callDurations.length)
       : 0;
 
   // Call type distribution for pie chart
@@ -381,9 +379,7 @@ export default function DashboardPage() {
                     </span>
                   </td>
                   <td className="px-6 py-4 text-sm text-text-secondary">
-                    {call.duration_seconds
-                      ? `${call.duration_seconds}s`
-                      : "\u2014"}
+                    {formatDuration(getCallDuration(call))}
                   </td>
                 </tr>
               ))}

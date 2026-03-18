@@ -21,6 +21,7 @@ import {
 import { format, parseISO, isValid } from "date-fns";
 import { nl } from "date-fns/locale";
 import { useAdmin } from "@/lib/useAdmin";
+import { getCallDuration, formatDuration } from "@/lib/utils";
 
 const CALL_TYPE_LABELS: Record<string, string> = {
   test: "Test",
@@ -137,7 +138,7 @@ export default function GesprekDetailPage() {
     {
       icon: Clock,
       label: "Duur",
-      value: call.duration_seconds ? `${call.duration_seconds} seconden` : "—",
+      value: formatDuration(getCallDuration(call)),
     },
     ...(isAdmin
       ? [

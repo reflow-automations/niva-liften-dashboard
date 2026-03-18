@@ -8,6 +8,7 @@ import { format, parseISO, isValid } from "date-fns";
 import { nl } from "date-fns/locale";
 import Link from "next/link";
 import { useAdmin } from "@/lib/useAdmin";
+import { getCallDuration, formatDuration } from "@/lib/utils";
 
 const CALL_TYPE_OPTIONS = [
   { value: "", label: "Alle types" },
@@ -188,7 +189,7 @@ export default function GesprekkenPage() {
                     </span>
                   </td>
                   <td className="px-6 py-4 text-sm text-text-secondary">
-                    {call.duration_seconds ? `${call.duration_seconds}s` : "\u2014"}
+                    {formatDuration(getCallDuration(call))}
                   </td>
                   {isAdmin && (
                     <td className="px-6 py-4 text-sm text-text-secondary">

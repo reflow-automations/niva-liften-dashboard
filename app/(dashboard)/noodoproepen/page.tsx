@@ -7,6 +7,7 @@ import { AlertTriangle, Phone } from "lucide-react";
 import { format, parseISO, isValid } from "date-fns";
 import { nl } from "date-fns/locale";
 import Link from "next/link";
+import { getCallDuration, formatDuration } from "@/lib/utils";
 
 function formatDate(dateStr: string | null) {
   if (!dateStr) return "\u2014";
@@ -110,7 +111,7 @@ export default function NoodoproepenPage() {
                     {call.sentiment || "\u2014"}
                   </td>
                   <td className="px-6 py-4 text-sm text-text-secondary">
-                    {call.duration_seconds ? `${call.duration_seconds}s` : "\u2014"}
+                    {formatDuration(getCallDuration(call))}
                   </td>
                   <td className="px-6 py-4">
                     <Link
