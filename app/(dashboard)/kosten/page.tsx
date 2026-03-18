@@ -311,7 +311,7 @@ export default function KostenPage() {
                   borderRadius: "12px",
                   color: "#f0f0f5",
                 }}
-                formatter={(value: number) => [`$${Number(value).toFixed(3)}`, "Kosten"]}
+                formatter={(value: unknown) => [`$${Number(value).toFixed(3)}`, "Kosten"]}
               />
               <Area
                 type="monotone"
