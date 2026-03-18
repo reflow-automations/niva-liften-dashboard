@@ -26,6 +26,7 @@ import {
 import Link from "next/link";
 import { format, parseISO, isValid, subDays } from "date-fns";
 import { nl } from "date-fns/locale";
+import KillSwitch from "@/components/KillSwitch";
 
 const CALL_TYPE_COLORS: Record<string, string> = {
   test: "#6366f1",
@@ -175,6 +176,9 @@ export default function DashboardPage() {
           Overzicht van alle liftactiviteiten
         </p>
       </div>
+
+      {/* Killswitch */}
+      <KillSwitch />
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
