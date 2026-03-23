@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase";
 import type { Lift } from "@/lib/types";
-import { Search, Building2, MapPin, CheckCircle2, XCircle, Clock } from "lucide-react";
+import { Search, Building2, MapPin, CheckCircle2, XCircle, Clock, User, PhoneCall } from "lucide-react";
 import { format, parseISO, isValid, differenceInDays } from "date-fns";
 import { nl } from "date-fns/locale";
 
@@ -53,15 +53,21 @@ export default function LiftenPage() {
   const handleToggleActive = async (lift: Lift) => {
     setToggling(lift.id);
     const newStatus = !lift.is_active;
-    const { error } = await supabase
-      .from("lifts")
-      .update({ is_active: newStatus })
-      .eq("id", lift.id);
 
-    if (!error) {
-      setLiften((prev) =>
-        prev.map((l) => (l.id === lift.id ? { ...l, is_active: newStatus } : l))
-      );
+    try {
+      const res = await fetch("/api/liften/toggle", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lift_id: lift.id, is_active: newStatus }),
+      });
+
+      if (res.ok) {
+        setLiften((prev) =>
+          prev.map((l) => (l.id === lift.id ? { ...l, is_active: newStatus } : l))
+        );
+      }
+    } catch {
+      // Silently fail — user can retry
     }
     setToggling(null);
   };
@@ -74,7 +80,8 @@ export default function LiftenPage() {
       lift.address?.toLowerCase().includes(q) ||
       lift.stad?.toLowerCase().includes(q) ||
       lift.postcode?.toLowerCase().includes(q) ||
-      lift.phone_number?.includes(q);
+      lift.phone_number?.includes(q) ||
+      lift.contactpersoon?.toLowerCase().includes(q);
 
     // Status filter
     const matchesStatus =
@@ -229,6 +236,24 @@ export default function LiftenPage() {
                   <p className="text-text-muted text-xs">Telefoon</p>
                   <p className="font-mono text-xs">+{lift.phone_number}</p>
                 </div>
+                {lift.contactpersoon && (
+                  <div className="flex items-start gap-1.5">
+                    <User className="w-3.5 h-3.5 text-text-muted mt-0.5 flex-shrink-0" />
+                    <div>
+                      <p className="text-text-muted text-xs">Contactpersoon</p>
+                      <p className="font-medium">{lift.contactpersoon}</p>
+                    </div>
+                  </div>
+                )}
+                {lift["extra-telefoon-nummer"] && (
+                  <div className="flex items-start gap-1.5">
+                    <PhoneCall className="w-3.5 h-3.5 text-text-muted mt-0.5 flex-shrink-0" />
+                    <div>
+                      <p className="text-text-muted text-xs">Extra telefoon</p>
+                      <p className="font-mono text-xs">{lift["extra-telefoon-nummer"]}</p>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="flex items-center justify-between pt-3 border-t border-border-subtle">

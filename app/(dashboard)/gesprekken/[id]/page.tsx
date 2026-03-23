@@ -333,6 +333,20 @@ export default function GesprekDetailPage() {
               {call.from_number || "—"}
             </span>
           </div>
+          {call.lifts?.contactpersoon && (
+            <div className="flex justify-between py-2 border-b border-border-subtle">
+              <span className="text-text-muted">Contactpersoon</span>
+              <span>{call.lifts.contactpersoon}</span>
+            </div>
+          )}
+          {call.lifts?.["extra-telefoon-nummer"] && (
+            <div className="flex justify-between py-2 border-b border-border-subtle">
+              <span className="text-text-muted">Extra telefoon</span>
+              <span className="font-mono text-xs">
+                {call.lifts["extra-telefoon-nummer"]}
+              </span>
+            </div>
+          )}
           <div className="flex justify-between py-2 border-b border-border-subtle">
             <span className="text-text-muted">Start</span>
             <span>{formatDate(call.start_time)}</span>

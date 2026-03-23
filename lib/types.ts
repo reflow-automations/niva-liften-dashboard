@@ -8,6 +8,8 @@ export interface Lift {
   is_active: boolean;
   last_test_at: string | null;
   created_at: string;
+  contactpersoon: string | null;
+  "extra-telefoon-nummer": string | null;
 }
 
 export interface CallLog {
