@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase";
 import type { Lift } from "@/lib/types";
-import { Search, Building2, MapPin, CheckCircle2, XCircle, Clock, User, PhoneCall } from "lucide-react";
+import { Search, Building2, MapPin, CheckCircle2, XCircle, Clock, User, PhoneCall, ArrowUpDown } from "lucide-react";
 import { format, parseISO, isValid, differenceInDays } from "date-fns";
 import { nl } from "date-fns/locale";
 
@@ -36,6 +36,7 @@ export default function LiftenPage() {
   const [statusFilter, setStatusFilter] = useState<"alle" | "actief" | "inactief">("alle");
   const [testFilter, setTestFilter] = useState<"alle" | "recent" | "verouderd" | "nooit">("alle");
   const [toggling, setToggling] = useState<string | null>(null);
+  const [sortNewest, setSortNewest] = useState(true);
 
   useEffect(() => {
     async function fetchLiften() {
@@ -108,6 +109,15 @@ export default function LiftenPage() {
     }
 
     return matchesSearch && matchesStatus && matchesTest;
+  }).sort((a, b) => {
+    // Liften zonder test altijd onderaan (bij newest) of bovenaan (bij oldest)
+    if (!a.last_test_at && !b.last_test_at) return 0;
+    if (!a.last_test_at) return sortNewest ? 1 : -1;
+    if (!b.last_test_at) return sortNewest ? -1 : 1;
+
+    const dateA = new Date(a.last_test_at).getTime();
+    const dateB = new Date(b.last_test_at).getTime();
+    return sortNewest ? dateB - dateA : dateA - dateB;
   });
 
   if (loading) {
@@ -180,6 +190,15 @@ export default function LiftenPage() {
             </button>
           ))}
         </div>
+
+        {/* Sort toggle */}
+        <button
+          onClick={() => setSortNewest(!sortNewest)}
+          className="flex items-center gap-2 px-4 py-2 rounded-xl border border-border bg-surface text-text-secondary hover:bg-surface-hover hover:text-text-primary text-sm font-medium transition-colors cursor-pointer"
+        >
+          <ArrowUpDown className="w-4 h-4" />
+          {sortNewest ? "Recent getest eerst" : "Langst niet getest eerst"}
+        </button>
 
         {/* Results count */}
         <div className="flex items-center text-sm text-text-muted ml-auto">
