@@ -17,6 +17,7 @@ import {
   Phone,
   AlertTriangle,
   Volume2,
+  HelpCircle,
 } from "lucide-react";
 import { format, parseISO, isValid } from "date-fns";
 import { nl } from "date-fns/locale";
@@ -355,10 +356,20 @@ export default function GesprekDetailPage() {
             <span className="text-text-muted">Einde</span>
             <span>{formatDate(call.end_time)}</span>
           </div>
-          <div className="flex justify-between py-2 border-b border-border-subtle">
-            <span className="text-text-muted">Queue tijd</span>
+          <div className="flex justify-between items-center py-2 border-b border-border-subtle">
+            <span className="text-text-muted flex items-center gap-1.5">
+              Queue tijd
+              <span className="relative group">
+                <HelpCircle className="w-3.5 h-3.5 text-text-muted/60 cursor-help" />
+                <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 px-3 py-2 rounded-xl bg-surface border border-border text-xs text-text-secondary opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity shadow-lg z-10">
+                  Wachttijd tussen het starten van het gesprek en het moment dat de AI het overneemt.
+                </span>
+              </span>
+            </span>
             <span>
-              {call.queue_time_ms ? `${call.queue_time_ms}ms` : "—"}
+              {call.queue_time_ms
+                ? `${call.queue_time_ms}ms / ${(call.queue_time_ms / 1000).toFixed(1)}s`
+                : "—"}
             </span>
           </div>
         </div>
