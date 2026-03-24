@@ -362,7 +362,7 @@ export default function GesprekDetailPage() {
               <span className="relative group">
                 <HelpCircle className="w-3.5 h-3.5 text-text-muted/60 cursor-help" />
                 <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 px-3 py-2 rounded-xl bg-surface border border-border text-xs text-text-secondary opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity shadow-lg z-10">
-                  Wachttijd tussen het starten van het gesprek en het moment dat de AI het overneemt.
+                  De wachttijd vanaf het indrukken van de noodknop tot het moment dat de digitale assistent (of meldkamer) antwoordt.
                 </span>
               </span>
             </span>
