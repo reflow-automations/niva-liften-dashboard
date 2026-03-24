@@ -6,7 +6,7 @@ import type { CallLog } from "@/lib/types";
 import { Search, Filter, Phone, ChevronRight } from "lucide-react";
 import { format, parseISO, isValid } from "date-fns";
 import { nl } from "date-fns/locale";
-import Link from "next/link";
+
 import { useAdmin } from "@/lib/useAdmin";
 import { getCallDuration, formatDuration } from "@/lib/utils";
 
@@ -169,7 +169,8 @@ export default function GesprekkenPage() {
               {filtered.map((call) => (
                 <tr
                   key={call.id}
-                  className="hover:bg-surface-hover/50 transition-colors group"
+                  className="hover:bg-surface-hover/50 transition-colors group cursor-pointer"
+                  onClick={() => window.location.href = `/gesprekken/${call.id}`}
                 >
                   <td className="px-6 py-4 text-sm whitespace-nowrap">
                     {formatDate(call.start_time || call.created_at)}
@@ -199,12 +200,7 @@ export default function GesprekkenPage() {
                     </td>
                   )}
                   <td className="px-6 py-4">
-                    <Link
-                      href={`/gesprekken/${call.id}`}
-                      className="opacity-0 group-hover:opacity-100 transition-opacity"
-                    >
-                      <ChevronRight className="w-4 h-4 text-text-muted hover:text-accent" />
-                    </Link>
+                    <ChevronRight className="w-4 h-4 text-text-muted group-hover:text-accent transition-colors" />
                   </td>
                 </tr>
               ))}
