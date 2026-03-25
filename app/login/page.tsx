@@ -15,15 +15,13 @@ export default function LoginPage() {
 
   // Detect password recovery token in URL hash and redirect
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event) => {
-        if (event === "PASSWORD_RECOVERY") {
-          router.push("/wachtwoord-wijzigen");
-        }
-      }
-    );
-    return () => subscription.unsubscribe();
-  }, [supabase, router]);
+    const hash = window.location.hash;
+    if (hash && hash.includes("type=recovery")) {
+      // Redirect to password change page, keep the hash so Supabase can process the token
+      window.location.replace("/wachtwoord-wijzigen" + hash);
+      return;
+    }
+  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();

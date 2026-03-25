@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
 import { Building2, Loader2, AlertCircle, CheckCircle2 } from "lucide-react";
@@ -11,8 +11,33 @@ export default function WachtwoordWijzigenPage() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [ready, setReady] = useState(false);
   const router = useRouter();
   const supabase = createClient();
+
+  // Process the recovery token from the URL hash
+  useEffect(() => {
+    const hash = window.location.hash;
+    if (hash && hash.includes("access_token")) {
+      // Supabase client will automatically pick up the token from the hash
+      // Wait for the session to be established
+      supabase.auth.onAuthStateChange((event) => {
+        if (event === "PASSWORD_RECOVERY" || event === "SIGNED_IN") {
+          setReady(true);
+        }
+      });
+    } else {
+      // No hash — user might already be logged in, check session
+      supabase.auth.getUser().then(({ data: { user } }) => {
+        if (user) {
+          setReady(true);
+        } else {
+          router.push("/login");
+        }
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -62,7 +87,12 @@ export default function WachtwoordWijzigenPage() {
           </p>
         </div>
 
-        {success ? (
+        {!ready ? (
+          <div className="glass-card p-8 text-center space-y-4">
+            <Loader2 className="w-8 h-8 animate-spin text-accent mx-auto" />
+            <p className="text-text-secondary text-sm">Sessie verifiëren...</p>
+          </div>
+        ) : success ? (
           <div className="glass-card p-8 text-center space-y-4">
             <CheckCircle2 className="w-12 h-12 text-success mx-auto" />
             <p className="text-text-primary font-semibold">
