@@ -355,14 +355,10 @@ export default function DashboardPage() {
                 <tr
                   key={call.id}
                   className="hover:bg-surface-hover/50 transition-colors cursor-pointer"
+                  onClick={() => window.location.href = `/gesprekken/${call.id}`}
                 >
                   <td className="px-6 py-4 text-sm">
-                    <Link
-                      href={`/gesprekken/${call.id}`}
-                      className="hover:text-accent"
-                    >
-                      {formatDate(call.start_time || call.created_at)}
-                    </Link>
+                    {formatDate(call.start_time || call.created_at)}
                   </td>
                   <td className="px-6 py-4 text-sm text-text-secondary">
                     {call.lifts?.bedrijf || call.lifts?.address || "\u2014"}
