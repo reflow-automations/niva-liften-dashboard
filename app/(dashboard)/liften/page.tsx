@@ -215,9 +215,9 @@ export default function LiftenPage() {
               key={lift.id}
               className="glass-card glass-card-hover p-5 space-y-4"
             >
-              <div className="flex items-start justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="p-2.5 rounded-xl bg-accent-muted">
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="p-2.5 rounded-xl bg-accent-muted flex-shrink-0">
                     <Building2 className="w-5 h-5 text-accent" />
                   </div>
                   <div className="min-w-0">
