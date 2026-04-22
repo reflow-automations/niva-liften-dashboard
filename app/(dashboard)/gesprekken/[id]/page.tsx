@@ -6,6 +6,8 @@ import { createClient } from "@/lib/supabase";
 import type { CallLog } from "@/lib/types";
 import {
   ArrowLeft,
+  ChevronUp,
+  ChevronDown,
   Play,
   Pause,
   Clock,
@@ -49,6 +51,7 @@ export default function GesprekDetailPage() {
   const [call, setCall] = useState<CallLog | null>(null);
   const [loading, setLoading] = useState(true);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [adjacent, setAdjacent] = useState<{ prev: string | null; next: string | null }>({ prev: null, next: null });
   const [isPlaying, setIsPlaying] = useState(false);
   const [audioProgress, setAudioProgress] = useState(0);
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -81,6 +84,20 @@ export default function GesprekDetailPage() {
       setLoading(false);
     }
     fetchCall();
+
+    async function fetchAdjacent() {
+      const { data } = await supabase
+        .from("call_logs")
+        .select("id, start_time, created_at")
+        .order("start_time", { ascending: false });
+      if (!data) return;
+      const idx = data.findIndex((c) => c.id === params.id);
+      setAdjacent({
+        prev: idx > 0 ? data[idx - 1].id : null,
+        next: idx < data.length - 1 ? data[idx + 1].id : null,
+      });
+    }
+    fetchAdjacent();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.id]);
 
@@ -181,9 +198,28 @@ export default function GesprekDetailPage() {
         <button
           onClick={() => router.push("/gesprekken")}
           className="p-2 rounded-xl bg-surface border border-border hover:bg-surface-hover transition-all cursor-pointer"
+          title="Terug naar overzicht"
         >
           <ArrowLeft className="w-5 h-5" />
         </button>
+        <div className="flex flex-col gap-1">
+          <button
+            onClick={() => adjacent.prev && router.push(`/gesprekken/${adjacent.prev}`)}
+            disabled={!adjacent.prev}
+            className="p-1.5 rounded-lg bg-surface border border-border hover:bg-surface-hover transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+            title="Nieuwer gesprek"
+          >
+            <ChevronUp className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => adjacent.next && router.push(`/gesprekken/${adjacent.next}`)}
+            disabled={!adjacent.next}
+            className="p-1.5 rounded-lg bg-surface border border-border hover:bg-surface-hover transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+            title="Ouder gesprek"
+          >
+            <ChevronDown className="w-4 h-4" />
+          </button>
+        </div>
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Gesprek detail</h1>
           <p className="text-text-secondary mt-0.5">
