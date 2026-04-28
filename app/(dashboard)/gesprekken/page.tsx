@@ -10,20 +10,32 @@ import { nl } from "date-fns/locale";
 import { useAdmin } from "@/lib/useAdmin";
 import { getCallDuration, formatDuration } from "@/lib/utils";
 
+// Group filter values: "monteur" matches multiple legacy enum values
 const CALL_TYPE_OPTIONS = [
   { value: "", label: "Alle types" },
-  { value: "test", label: "Test" },
+  { value: "test_dtmf", label: "DTMF test" },
+  { value: "monteur", label: "Monteur test" },
   { value: "noodoproep", label: "Noodoproep" },
 ];
 
+const MONTEUR_TYPES = ["test", "test_monteur", "test_automatisch"];
+
 const CALL_TYPE_COLORS: Record<string, string> = {
   test: "#6366f1",
+  test_monteur: "#6366f1",
+  test_automatisch: "#6366f1",
+  test_dtmf: "#06b6d4",
   noodoproep: "#ef4444",
+  onbekend: "#6b7280",
 };
 
 const CALL_TYPE_LABELS: Record<string, string> = {
-  test: "Test",
+  test: "Monteur test",
+  test_monteur: "Monteur test",
+  test_automatisch: "Monteur test",
+  test_dtmf: "DTMF test",
   noodoproep: "Noodoproep",
+  onbekend: "Onbekend",
 };
 
 function formatDate(dateStr: string | null) {
@@ -56,7 +68,13 @@ export default function GesprekkenPage() {
   }, []);
 
   const filtered = calls.filter((call) => {
-    if (typeFilter && call.call_type !== typeFilter) return false;
+    if (typeFilter) {
+      if (typeFilter === "monteur") {
+        if (!MONTEUR_TYPES.includes(call.call_type)) return false;
+      } else if (call.call_type !== typeFilter) {
+        return false;
+      }
+    }
     if (search) {
       const q = search.toLowerCase();
       return (

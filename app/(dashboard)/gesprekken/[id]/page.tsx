@@ -27,13 +27,21 @@ import { useAdmin } from "@/lib/useAdmin";
 import { getCallDuration, formatDuration } from "@/lib/utils";
 
 const CALL_TYPE_LABELS: Record<string, string> = {
-  test: "Test",
+  test: "Monteur test",
+  test_monteur: "Monteur test",
+  test_automatisch: "Monteur test",
+  test_dtmf: "DTMF test",
   noodoproep: "Noodoproep",
+  onbekend: "Onbekend",
 };
 
 const CALL_TYPE_COLORS: Record<string, string> = {
   test: "#6366f1",
+  test_monteur: "#6366f1",
+  test_automatisch: "#6366f1",
+  test_dtmf: "#06b6d4",
   noodoproep: "#ef4444",
+  onbekend: "#6b7280",
 };
 
 function formatDate(dateStr: string | null) {

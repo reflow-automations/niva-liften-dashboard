@@ -3,6 +3,7 @@ import { SupabaseClient } from "@supabase/supabase-js";
 export type AuditAction =
   | "killswitch_toggled"
   | "lift_toggled"
+  | "lift_imported"
   | "user_login"
   | "user_logout";
 

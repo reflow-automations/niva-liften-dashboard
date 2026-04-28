@@ -7,6 +7,7 @@ export interface Lift {
   stad: string;
   is_active: boolean;
   last_test_at: string | null;
+  last_test_dtmf_at: string | null;
   created_at: string;
   contactpersoon: string | null;
   "extra-telefoon-nummer": string | null;
@@ -18,7 +19,7 @@ export interface CallLog {
   call_sid: string;
   retell_call_id: string | null;
   trace_id: string | null;
-  call_type: "test" | "noodoproep";
+  call_type: "test" | "test_monteur" | "test_automatisch" | "test_dtmf" | "noodoproep" | "onbekend";
   from_number: string | null;
   start_time: string | null;
   end_time: string | null;

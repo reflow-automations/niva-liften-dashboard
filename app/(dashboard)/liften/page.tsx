@@ -3,9 +3,10 @@
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase";
 import type { Lift } from "@/lib/types";
-import { Search, Building2, MapPin, CheckCircle2, XCircle, Clock, User, PhoneCall, ArrowUpDown } from "lucide-react";
+import { Search, Building2, MapPin, CheckCircle2, XCircle, Clock, User, PhoneCall, ArrowUpDown, Upload } from "lucide-react";
 import { format, parseISO, isValid, differenceInDays } from "date-fns";
 import { nl } from "date-fns/locale";
+import ImportLiftenModal from "@/components/ImportLiftenModal";
 
 function getTestStatus(lastTestAt: string | null): {
   label: string;
@@ -28,6 +29,28 @@ function getTestStatus(lastTestAt: string | null): {
   }
 }
 
+// DTMF tests run every 3 days from elevator hardware. Tighter freshness threshold.
+function getDtmfTestStatus(lastTestAt: string | null): {
+  label: string;
+  color: string;
+  bgColor: string;
+} {
+  if (!lastTestAt) {
+    return { label: "Nooit getest", color: "text-text-muted", bgColor: "bg-surface-hover" };
+  }
+  const d = parseISO(lastTestAt);
+  if (!isValid(d)) return { label: "Onbekend", color: "text-text-muted", bgColor: "bg-surface-hover" };
+
+  const daysSince = differenceInDays(new Date(), d);
+  if (daysSince <= 4) {
+    return { label: "Recent getest", color: "text-success", bgColor: "bg-success-muted" };
+  } else if (daysSince <= 7) {
+    return { label: `${daysSince}d geleden`, color: "text-warning", bgColor: "bg-warning-muted" };
+  } else {
+    return { label: `${daysSince}d geleden`, color: "text-danger", bgColor: "bg-danger-muted" };
+  }
+}
+
 export default function LiftenPage() {
   const supabase = createClient();
   const [liften, setLiften] = useState<Lift[]>([]);
@@ -35,18 +58,21 @@ export default function LiftenPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"alle" | "actief" | "inactief">("alle");
   const [testFilter, setTestFilter] = useState<"alle" | "recent" | "verouderd" | "nooit">("alle");
+  const [dtmfFilter, setDtmfFilter] = useState<"alle" | "recent" | "verouderd" | "nooit">("alle");
   const [toggling, setToggling] = useState<string | null>(null);
   const [sortNewest, setSortNewest] = useState(true);
+  const [showImport, setShowImport] = useState(false);
+
+  async function fetchLiften() {
+    const { data } = await supabase
+      .from("lifts")
+      .select("*")
+      .order("bedrijf", { ascending: true });
+    setLiften(data || []);
+    setLoading(false);
+  }
 
   useEffect(() => {
-    async function fetchLiften() {
-      const { data } = await supabase
-        .from("lifts")
-        .select("*")
-        .order("bedrijf", { ascending: true });
-      setLiften(data || []);
-      setLoading(false);
-    }
     fetchLiften();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -90,7 +116,7 @@ export default function LiftenPage() {
       (statusFilter === "actief" && lift.is_active) ||
       (statusFilter === "inactief" && !lift.is_active);
 
-    // Test filter
+    // Monteur test filter (operates on last_test_at)
     let matchesTest = true;
     if (testFilter !== "alle") {
       if (!lift.last_test_at) {
@@ -108,7 +134,25 @@ export default function LiftenPage() {
       }
     }
 
-    return matchesSearch && matchesStatus && matchesTest;
+    // DTMF test filter (operates on last_test_dtmf_at)
+    let matchesDtmf = true;
+    if (dtmfFilter !== "alle") {
+      if (!lift.last_test_dtmf_at) {
+        matchesDtmf = dtmfFilter === "nooit";
+      } else {
+        const d = parseISO(lift.last_test_dtmf_at);
+        if (!isValid(d)) {
+          matchesDtmf = dtmfFilter === "nooit";
+        } else {
+          const daysSince = differenceInDays(new Date(), d);
+          if (dtmfFilter === "recent") matchesDtmf = daysSince <= 4;
+          else if (dtmfFilter === "verouderd") matchesDtmf = daysSince > 7;
+          else matchesDtmf = false;
+        }
+      }
+    }
+
+    return matchesSearch && matchesStatus && matchesTest && matchesDtmf;
   }).sort((a, b) => {
     // Liften zonder test altijd onderaan (bij newest) of bovenaan (bij oldest)
     if (!a.last_test_at && !b.last_test_at) return 0;
@@ -138,17 +182,36 @@ export default function LiftenPage() {
             {liften.length} liften geregistreerd
           </p>
         </div>
-        <div className="relative w-full sm:w-80">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
-          <input
-            type="text"
-            placeholder="Zoek op adres, stad, bedrijf..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-surface border border-border text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all"
-          />
+        <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+          <button
+            onClick={() => setShowImport(true)}
+            className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-accent text-white text-sm font-medium hover:opacity-90 cursor-pointer"
+          >
+            <Upload className="w-4 h-4" />
+            Importeer CSV
+          </button>
+          <div className="relative w-full sm:w-80">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
+            <input
+              type="text"
+              placeholder="Zoek op adres, stad, bedrijf..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-surface border border-border text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all"
+            />
+          </div>
         </div>
       </div>
+
+      {showImport && (
+        <ImportLiftenModal
+          onClose={() => setShowImport(false)}
+          onImported={() => {
+            setLoading(true);
+            fetchLiften();
+          }}
+        />
+      )}
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3">
@@ -169,26 +232,54 @@ export default function LiftenPage() {
           ))}
         </div>
 
-        {/* Test filter */}
-        <div className="flex rounded-xl overflow-hidden border border-border">
-          {([
-            { value: "alle", label: "Alle tests" },
-            { value: "recent", label: "Recent getest" },
-            { value: "verouderd", label: ">30 dagen" },
-            { value: "nooit", label: "Nooit getest" },
-          ] as const).map((option) => (
-            <button
-              key={option.value}
-              onClick={() => setTestFilter(option.value)}
-              className={`px-4 py-2 text-sm font-medium transition-colors cursor-pointer ${
-                testFilter === option.value
-                  ? "bg-accent text-white"
-                  : "bg-surface text-text-secondary hover:bg-surface-hover"
-              }`}
-            >
-              {option.label}
-            </button>
-          ))}
+        {/* Monteur test filter */}
+        <div className="flex flex-col gap-1">
+          <span className="text-xs text-text-muted px-1">Monteur test</span>
+          <div className="flex rounded-xl overflow-hidden border border-border">
+            {([
+              { value: "alle", label: "Alle" },
+              { value: "recent", label: "Recent" },
+              { value: "verouderd", label: ">30d" },
+              { value: "nooit", label: "Nooit" },
+            ] as const).map((option) => (
+              <button
+                key={option.value}
+                onClick={() => setTestFilter(option.value)}
+                className={`px-3 py-2 text-sm font-medium transition-colors cursor-pointer ${
+                  testFilter === option.value
+                    ? "bg-accent text-white"
+                    : "bg-surface text-text-secondary hover:bg-surface-hover"
+                }`}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* DTMF test filter */}
+        <div className="flex flex-col gap-1">
+          <span className="text-xs text-text-muted px-1">DTMF test</span>
+          <div className="flex rounded-xl overflow-hidden border border-border">
+            {([
+              { value: "alle", label: "Alle" },
+              { value: "recent", label: "Recent" },
+              { value: "verouderd", label: ">7d" },
+              { value: "nooit", label: "Nooit" },
+            ] as const).map((option) => (
+              <button
+                key={option.value}
+                onClick={() => setDtmfFilter(option.value)}
+                className={`px-3 py-2 text-sm font-medium transition-colors cursor-pointer ${
+                  dtmfFilter === option.value
+                    ? "bg-accent text-white"
+                    : "bg-surface text-text-secondary hover:bg-surface-hover"
+                }`}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Sort toggle */}
@@ -210,6 +301,7 @@ export default function LiftenPage() {
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
         {filtered.map((lift) => {
           const testStatus = getTestStatus(lift.last_test_at);
+          const dtmfStatus = getDtmfTestStatus(lift.last_test_dtmf_at);
           return (
             <div
               key={lift.id}
@@ -275,20 +367,37 @@ export default function LiftenPage() {
                 )}
               </div>
 
-              <div className="flex items-center justify-between pt-3 border-t border-border-subtle">
-                <div className="flex items-center gap-2">
-                  <Clock className="w-3.5 h-3.5 text-text-muted" />
-                  <span className="text-xs text-text-muted">Laatste test</span>
+              <div className="space-y-2 pt-3 border-t border-border-subtle">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Clock className="w-3.5 h-3.5 text-text-muted" />
+                    <span className="text-xs text-text-muted">Monteur test</span>
+                  </div>
+                  <span
+                    className={`text-xs font-medium px-2 py-1 rounded-lg ${testStatus.bgColor} ${testStatus.color}`}
+                  >
+                    {lift.last_test_at
+                      ? format(parseISO(lift.last_test_at), "d MMM yyyy, HH:mm", {
+                          locale: nl,
+                        })
+                      : testStatus.label}
+                  </span>
                 </div>
-                <span
-                  className={`text-xs font-medium px-2 py-1 rounded-lg ${testStatus.bgColor} ${testStatus.color}`}
-                >
-                  {lift.last_test_at
-                    ? format(parseISO(lift.last_test_at), "d MMM yyyy, HH:mm", {
-                        locale: nl,
-                      })
-                    : testStatus.label}
-                </span>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Clock className="w-3.5 h-3.5 text-text-muted" />
+                    <span className="text-xs text-text-muted">DTMF test</span>
+                  </div>
+                  <span
+                    className={`text-xs font-medium px-2 py-1 rounded-lg ${dtmfStatus.bgColor} ${dtmfStatus.color}`}
+                  >
+                    {lift.last_test_dtmf_at
+                      ? format(parseISO(lift.last_test_dtmf_at), "d MMM yyyy, HH:mm", {
+                          locale: nl,
+                        })
+                      : dtmfStatus.label}
+                  </span>
+                </div>
               </div>
             </div>
           );
