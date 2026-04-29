@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Papa from "papaparse";
-import { X, Upload, FileText, ArrowRight, Check, AlertCircle, Loader2 } from "lucide-react";
+import { X, Upload, FileText, ArrowRight, Check, AlertCircle, Loader2, Database } from "lucide-react";
 import { normalizePhone } from "@/lib/phone";
 
 type DbField =
@@ -52,12 +52,23 @@ interface ParsedCsv {
   rows: Record<string, string>[];
 }
 
+// 4 possible statuses — "db_duplicate" added vs original
+type RowStatus = "new" | "csv_duplicate" | "db_duplicate" | "invalid";
+
 interface PreviewRow {
   index: number;
   data: Record<string, string>;
   normalizedPhone: string;
-  status: "new" | "duplicate" | "invalid";
+  status: RowStatus;
   reason?: string;
+}
+
+interface ServerCheck {
+  echt_nieuw: number;
+  al_in_db: number;
+  csv_dupes: number;
+  invalid: number;
+  db_duplicate_phones: Set<string>;
 }
 
 export default function ImportLiftenModal({ onClose, onImported }: Props) {
@@ -67,6 +78,9 @@ export default function ImportLiftenModal({ onClose, onImported }: Props) {
   const [parsing, setParsing] = useState(false);
   const [parseError, setParseError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const [checkError, setCheckError] = useState<string | null>(null);
+  const [serverCheck, setServerCheck] = useState<ServerCheck | null>(null);
   const [result, setResult] = useState<{
     inserted: number;
     duplicates: number;
@@ -123,7 +137,8 @@ export default function ImportLiftenModal({ onClose, onImported }: Props) {
     return required.every((f) => mapped.has(f));
   }, [csv, mapping]);
 
-  const previewRows = useMemo<PreviewRow[]>(() => {
+  // Client-side preview rows (CSV-level only — no DB knowledge yet)
+  const clientRows = useMemo<PreviewRow[]>(() => {
     if (!csv) return [];
     const seen = new Set<string>();
     return csv.rows.map((row, index) => {
@@ -135,47 +150,83 @@ export default function ImportLiftenModal({ onClose, onImported }: Props) {
       });
       const phone = normalizePhone(data.phone_number);
       if (!phone)
-        return {
-          index,
-          data,
-          normalizedPhone: "",
-          status: "invalid",
-          reason: "Geen geldig telefoonnummer",
-        };
+        return { index, data, normalizedPhone: "", status: "invalid", reason: "Geen geldig telefoonnummer" };
       if (!data.address)
-        return {
-          index,
-          data,
-          normalizedPhone: phone,
-          status: "invalid",
-          reason: "Geen adres",
-        };
+        return { index, data, normalizedPhone: phone, status: "invalid", reason: "Geen adres" };
       if (!data.bedrijf)
-        return {
-          index,
-          data,
-          normalizedPhone: phone,
-          status: "invalid",
-          reason: "Geen bedrijf",
-        };
+        return { index, data, normalizedPhone: phone, status: "invalid", reason: "Geen bedrijf" };
       if (seen.has(phone))
-        return {
-          index,
-          data,
-          normalizedPhone: phone,
-          status: "duplicate",
-          reason: "Duplicaat in CSV",
-        };
+        return { index, data, normalizedPhone: phone, status: "csv_duplicate", reason: "Duplicaat in CSV" };
       seen.add(phone);
       return { index, data, normalizedPhone: phone, status: "new" };
     });
   }, [csv, mapping]);
 
+  // Merge server check result into rows — replace "new" with "db_duplicate" where applicable
+  const previewRows = useMemo<PreviewRow[]>(() => {
+    if (!serverCheck) return clientRows;
+    return clientRows.map((r) => {
+      if (r.status === "new" && serverCheck.db_duplicate_phones.has(r.normalizedPhone)) {
+        return { ...r, status: "db_duplicate", reason: "Al in database" };
+      }
+      return r;
+    });
+  }, [clientRows, serverCheck]);
+
   const counts = useMemo(() => {
-    const c = { new: 0, duplicate: 0, invalid: 0 };
+    const c = { new: 0, csv_duplicate: 0, db_duplicate: 0, invalid: 0 };
     previewRows.forEach((r) => c[r.status]++);
     return c;
   }, [previewRows]);
+
+  // Run server check when entering preview step
+  const runServerCheck = useCallback(async () => {
+    if (!csv) return;
+    setChecking(true);
+    setCheckError(null);
+    setServerCheck(null);
+
+    // Send all client-valid rows to server (server will re-dedup + check DB)
+    const payload = clientRows
+      .filter((r) => r.status === "new" || r.status === "csv_duplicate")
+      .map((r) => ({
+        phone_number: r.normalizedPhone,
+        address: r.data.address,
+        bedrijf: r.data.bedrijf,
+      }));
+
+    try {
+      const res = await fetch("/api/liften/import/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rows: payload }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setCheckError(json.error || "Controle mislukt");
+        setChecking(false);
+        return;
+      }
+      setServerCheck({
+        echt_nieuw: json.echt_nieuw,
+        al_in_db: json.al_in_db,
+        csv_dupes: json.csv_dupes,
+        invalid: json.invalid,
+        db_duplicate_phones: new Set<string>(json.db_duplicate_phones),
+      });
+    } catch {
+      setCheckError("Netwerkfout bij DB-controle");
+    }
+    setChecking(false);
+  }, [csv, clientRows]);
+
+  // Auto-trigger server check when entering preview
+  useEffect(() => {
+    if (step === "preview") {
+      runServerCheck();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step]);
 
   const handleImport = async () => {
     setSubmitting(true);
@@ -206,7 +257,7 @@ export default function ImportLiftenModal({ onClose, onImported }: Props) {
       }
       setResult({
         inserted: json.inserted,
-        duplicates: json.duplicates + counts.duplicate,
+        duplicates: json.duplicates + counts.csv_duplicate + counts.db_duplicate,
         invalid: json.invalid || [],
       });
       setStep("done");
@@ -215,6 +266,12 @@ export default function ImportLiftenModal({ onClose, onImported }: Props) {
       setServerError("Netwerkfout");
     }
     setSubmitting(false);
+  };
+
+  const goToPreview = () => {
+    setServerCheck(null);
+    setCheckError(null);
+    setStep("preview");
   };
 
   return (
@@ -283,9 +340,7 @@ export default function ImportLiftenModal({ onClose, onImported }: Props) {
               <div className="text-xs text-text-muted space-y-1">
                 <p>• Eerste rij = kolomnamen</p>
                 <p>• Scheidingsteken `,` of `;` (autodetect)</p>
-                <p>
-                  • Verplichte velden: telefoonnummer, adres, bedrijf
-                </p>
+                <p>• Verplichte velden: telefoonnummer, adres, bedrijf</p>
               </div>
             </div>
           )}
@@ -311,9 +366,7 @@ export default function ImportLiftenModal({ onClose, onImported }: Props) {
                     </div>
                     <ArrowRight className="w-4 h-4 text-text-muted" />
                     <div>
-                      <p className="text-xs text-text-muted mb-1">
-                        Database veld
-                      </p>
+                      <p className="text-xs text-text-muted mb-1">Database veld</p>
                       <select
                         value={mapping[header] || "__ignore__"}
                         onChange={(e) =>
@@ -349,28 +402,61 @@ export default function ImportLiftenModal({ onClose, onImported }: Props) {
 
           {step === "preview" && (
             <div className="space-y-4">
-              <div className="grid grid-cols-3 gap-3">
-                <div className="p-4 rounded-xl bg-success-muted">
-                  <p className="text-xs text-text-muted">Nieuw</p>
-                  <p className="text-2xl font-bold text-success">{counts.new}</p>
+              {/* DB check status banner */}
+              {checking && (
+                <div className="flex items-center gap-2 text-sm text-text-secondary bg-surface-hover p-3 rounded-xl border border-border">
+                  <Loader2 className="w-4 h-4 animate-spin flex-shrink-0" />
+                  <span>Controleren tegen database...</span>
                 </div>
-                <div className="p-4 rounded-xl bg-warning-muted">
-                  <p className="text-xs text-text-muted">Duplicaat (skip)</p>
+              )}
+              {checkError && (
+                <div className="flex items-start gap-2 text-sm text-danger bg-danger-muted p-3 rounded-xl">
+                  <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <span>{checkError}</span>
+                    <button
+                      onClick={runServerCheck}
+                      className="ml-2 underline cursor-pointer"
+                    >
+                      Opnieuw proberen
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Counts — 4 tiles */}
+              <div className="grid grid-cols-4 gap-2">
+                <div className="p-3 rounded-xl bg-success-muted">
+                  <p className="text-xs text-text-muted">Echt nieuw</p>
+                  <p className="text-2xl font-bold text-success">
+                    {checking ? <Loader2 className="w-5 h-5 animate-spin mt-1" /> : counts.new}
+                  </p>
+                  {serverCheck && (
+                    <p className="text-xs text-success mt-0.5">DB gecheckt ✓</p>
+                  )}
+                </div>
+                <div className="p-3 rounded-xl bg-surface-hover border border-border">
+                  <p className="text-xs text-text-muted">Al in DB</p>
+                  <p className="text-2xl font-bold text-text-secondary">
+                    {checking ? "…" : counts.db_duplicate}
+                  </p>
+                  <p className="text-xs text-text-muted mt-0.5">skip</p>
+                </div>
+                <div className="p-3 rounded-xl bg-warning-muted">
+                  <p className="text-xs text-text-muted">CSV-dupe</p>
                   <p className="text-2xl font-bold text-warning">
-                    {counts.duplicate}
+                    {counts.csv_duplicate}
                   </p>
+                  <p className="text-xs text-text-muted mt-0.5">skip</p>
                 </div>
-                <div className="p-4 rounded-xl bg-danger-muted">
-                  <p className="text-xs text-text-muted">Fout (skip)</p>
-                  <p className="text-2xl font-bold text-danger">
-                    {counts.invalid}
-                  </p>
+                <div className="p-3 rounded-xl bg-danger-muted">
+                  <p className="text-xs text-text-muted">Fout</p>
+                  <p className="text-2xl font-bold text-danger">{counts.invalid}</p>
+                  <p className="text-xs text-text-muted mt-0.5">skip</p>
                 </div>
               </div>
-              <p className="text-xs text-text-muted">
-                Duplicaten in DB worden ook geskipt. Telefoonnummers worden
-                genormaliseerd (bv `+31 6 12345` → `31612345`).
-              </p>
+
+              {/* Table */}
               <div className="border border-border rounded-xl overflow-hidden">
                 <div className="max-h-80 overflow-y-auto">
                   <table className="w-full text-sm">
@@ -398,12 +484,20 @@ export default function ImportLiftenModal({ onClose, onImported }: Props) {
                                 Nieuw
                               </span>
                             )}
-                            {r.status === "duplicate" && (
+                            {r.status === "db_duplicate" && (
+                              <span
+                                className="px-2 py-0.5 rounded text-xs bg-surface-hover text-text-secondary border border-border"
+                                title="Al aanwezig in database"
+                              >
+                                Al in DB
+                              </span>
+                            )}
+                            {r.status === "csv_duplicate" && (
                               <span
                                 className="px-2 py-0.5 rounded text-xs bg-warning-muted text-warning"
                                 title={r.reason}
                               >
-                                Duplicaat
+                                CSV-dupe
                               </span>
                             )}
                             {r.status === "invalid" && (
@@ -435,6 +529,7 @@ export default function ImportLiftenModal({ onClose, onImported }: Props) {
                   </div>
                 )}
               </div>
+
               {serverError && (
                 <div className="flex items-start gap-2 text-sm text-danger bg-danger-muted p-3 rounded-lg">
                   <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
@@ -483,7 +578,7 @@ export default function ImportLiftenModal({ onClose, onImported }: Props) {
                 </button>
                 <button
                   disabled={!mappingValid}
-                  onClick={() => setStep("preview")}
+                  onClick={goToPreview}
                   className="px-4 py-2 rounded-lg text-sm bg-accent text-white font-medium hover:opacity-90 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   Volgende
@@ -500,12 +595,22 @@ export default function ImportLiftenModal({ onClose, onImported }: Props) {
                   Terug
                 </button>
                 <button
-                  disabled={submitting || counts.new === 0}
+                  disabled={submitting || checking || counts.new === 0 || !!checkError}
                   onClick={handleImport}
                   className="px-4 py-2 rounded-lg text-sm bg-accent text-white font-medium hover:opacity-90 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
                 >
                   {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
-                  Importeer {counts.new} liften
+                  {checking ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Controleren...
+                    </>
+                  ) : (
+                    <>
+                      <Database className="w-4 h-4" />
+                      Importeer {counts.new} liften
+                    </>
+                  )}
                 </button>
               </>
             )}
