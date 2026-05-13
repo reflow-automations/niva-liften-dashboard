@@ -11,11 +11,14 @@ import { useAdmin } from "@/lib/useAdmin";
 import { getCallDuration, formatDuration } from "@/lib/utils";
 
 // Group filter values: "monteur" matches multiple legacy enum values
+const WRONG_NUMBER = "Nummer verkeerd!";
+
 const CALL_TYPE_OPTIONS = [
   { value: "", label: "Alle types" },
   { value: "test_dtmf", label: "DTMF test" },
   { value: "monteur", label: "Monteur test" },
   { value: "noodoproep", label: "Noodoproep" },
+  { value: WRONG_NUMBER, label: "Nummer verkeerd" },
 ];
 
 const MONTEUR_TYPES = ["test", "test_monteur", "test_automatisch"];
@@ -27,6 +30,7 @@ const CALL_TYPE_COLORS: Record<string, string> = {
   test_dtmf: "#06b6d4",
   noodoproep: "#ef4444",
   onbekend: "#6b7280",
+  [WRONG_NUMBER]: "#ff1744",
 };
 
 const CALL_TYPE_LABELS: Record<string, string> = {
@@ -36,6 +40,7 @@ const CALL_TYPE_LABELS: Record<string, string> = {
   test_dtmf: "DTMF test",
   noodoproep: "Noodoproep",
   onbekend: "Onbekend",
+  [WRONG_NUMBER]: "Nummer verkeerd!",
 };
 
 function formatDate(dateStr: string | null) {
@@ -81,7 +86,8 @@ export default function GesprekkenPage() {
         call.lifts?.bedrijf?.toLowerCase().includes(q) ||
         call.lifts?.address?.toLowerCase().includes(q) ||
         call.call_sid?.toLowerCase().includes(q) ||
-        call.summary?.toLowerCase().includes(q)
+        call.summary?.toLowerCase().includes(q) ||
+        call.from_number?.toLowerCase().includes(q)
       );
     }
     return true;
@@ -184,17 +190,30 @@ export default function GesprekkenPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border-subtle">
-              {filtered.map((call) => (
+              {filtered.map((call) => {
+                const isWrongNumber = call.call_type === WRONG_NUMBER;
+                return (
                 <tr
                   key={call.id}
-                  className="hover:bg-surface-hover/50 transition-colors group cursor-pointer"
+                  className={`hover:bg-surface-hover/50 transition-colors group cursor-pointer ${
+                    isWrongNumber ? "row-wrong-number" : ""
+                  }`}
                   onClick={() => window.location.href = `/gesprekken/${call.id}`}
                 >
                   <td className="px-6 py-4 text-sm whitespace-nowrap">
                     {formatDate(call.start_time || call.created_at)}
                   </td>
                   <td className="px-6 py-4 text-sm text-text-secondary max-w-[200px] truncate">
-                    {call.lifts?.bedrijf || call.lifts?.address || "\u2014"}
+                    {isWrongNumber && !call.lifts ? (
+                      <span className="flex flex-col">
+                        <span className="text-[#ff1744] font-semibold">Onbekende lift</span>
+                        <span className="font-mono text-xs text-text-muted">
+                          {call.from_number || "\u2014"}
+                        </span>
+                      </span>
+                    ) : (
+                      call.lifts?.bedrijf || call.lifts?.address || "\u2014"
+                    )}
                   </td>
                   <td className="px-6 py-4">
                     <span
@@ -221,7 +240,8 @@ export default function GesprekkenPage() {
                     <ChevronRight className="w-4 h-4 text-text-muted group-hover:text-accent transition-colors" />
                   </td>
                 </tr>
-              ))}
+                );
+              })}
               {filtered.length === 0 && (
                 <tr>
                   <td

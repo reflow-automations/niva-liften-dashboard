@@ -19,7 +19,7 @@ export interface CallLog {
   call_sid: string;
   retell_call_id: string | null;
   trace_id: string | null;
-  call_type: "test" | "test_monteur" | "test_automatisch" | "test_dtmf" | "noodoproep" | "onbekend";
+  call_type: "test" | "test_monteur" | "test_automatisch" | "test_dtmf" | "noodoproep" | "onbekend" | "Nummer verkeerd!";
   from_number: string | null;
   start_time: string | null;
   end_time: string | null;

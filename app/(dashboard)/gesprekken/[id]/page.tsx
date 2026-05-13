@@ -26,6 +26,8 @@ import { nl } from "date-fns/locale";
 import { useAdmin } from "@/lib/useAdmin";
 import { getCallDuration, formatDuration } from "@/lib/utils";
 
+const WRONG_NUMBER = "Nummer verkeerd!";
+
 const CALL_TYPE_LABELS: Record<string, string> = {
   test: "Monteur test",
   test_monteur: "Monteur test",
@@ -33,6 +35,7 @@ const CALL_TYPE_LABELS: Record<string, string> = {
   test_dtmf: "DTMF test",
   noodoproep: "Noodoproep",
   onbekend: "Onbekend",
+  [WRONG_NUMBER]: "Nummer verkeerd!",
 };
 
 const CALL_TYPE_COLORS: Record<string, string> = {
@@ -42,6 +45,7 @@ const CALL_TYPE_COLORS: Record<string, string> = {
   test_dtmf: "#06b6d4",
   noodoproep: "#ef4444",
   onbekend: "#6b7280",
+  [WRONG_NUMBER]: "#ff1744",
 };
 
 function formatDate(dateStr: string | null) {
@@ -246,7 +250,7 @@ export default function GesprekDetailPage() {
             color: CALL_TYPE_COLORS[call.call_type],
           }}
         >
-          {call.call_type === "noodoproep" ? (
+          {call.call_type === "noodoproep" || call.call_type === WRONG_NUMBER ? (
             <AlertTriangle className="w-4 h-4" />
           ) : (
             <Phone className="w-4 h-4" />
@@ -254,7 +258,11 @@ export default function GesprekDetailPage() {
           {CALL_TYPE_LABELS[call.call_type] || call.call_type}
         </span>
         <span className="inline-flex items-center px-3 py-1.5 rounded-xl text-sm font-medium bg-surface-hover text-text-secondary">
-          {call.call_type === "noodoproep" ? "Noodoproep" : "Test"}
+          {call.call_type === "noodoproep"
+            ? "Noodoproep"
+            : call.call_type === WRONG_NUMBER
+              ? "Edge case"
+              : "Test"}
         </span>
         {call.fallback_reason && (
           <span className="inline-flex items-center px-3 py-1.5 rounded-xl text-sm font-medium bg-warning-muted text-warning">
