@@ -85,14 +85,16 @@ export async function POST(request: NextRequest) {
     cleaned.push({ row: r, phone, index: i });
   });
 
-  // Fetch existing phones (paged in case >1000 rows)
-  const existing = new Set<string>();
+  // Fetch existing lifts with id + address + bedrijf for update matching
+  const existingByPhone = new Set<string>();
+  const addressBedrijfToId = new Map<string, string>(); // "addr|bedrijf" -> lift id
+
   let from = 0;
   const PAGE = 1000;
   while (true) {
     const { data, error } = await admin
       .from("lifts")
-      .select("phone_number")
+      .select("id, phone_number, address, bedrijf")
       .range(from, from + PAGE - 1);
     if (error) {
       return NextResponse.json(
@@ -101,34 +103,48 @@ export async function POST(request: NextRequest) {
       );
     }
     if (!data || data.length === 0) break;
-    data.forEach((d) => existing.add(d.phone_number));
+    data.forEach((d) => {
+      existingByPhone.add(d.phone_number);
+      const key = `${(d.address || "").trim().toLowerCase()}|${(d.bedrijf || "").trim().toLowerCase()}`;
+      addressBedrijfToId.set(key, d.id);
+    });
     if (data.length < PAGE) break;
     from += PAGE;
   }
 
-  // Dedup within payload + against DB
+  // Categorize: insert, update (same address+bedrijf but different phone), or duplicate
   const toInsert: IncomingRow[] = [];
+  const toUpdate: { id: string; phone: string }[] = [];
   const duplicates: number[] = [];
   const seenInBatch = new Set<string>();
 
   for (const c of cleaned) {
-    if (existing.has(c.phone) || seenInBatch.has(c.phone)) {
+    if (existingByPhone.has(c.phone) || seenInBatch.has(c.phone)) {
       duplicates.push(c.index);
       continue;
     }
     seenInBatch.add(c.phone);
-    toInsert.push({
-      phone_number: c.phone,
-      address: (c.row.address || "").trim(),
-      bedrijf: (c.row.bedrijf || "").trim(),
-      postcode: (c.row.postcode || "").trim(),
-      stad: (c.row.stad || "").trim(),
-      contactpersoon: c.row.contactpersoon?.trim() || undefined,
-      "extra-telefoon-nummer":
-        c.row["extra-telefoon-nummer"]?.trim() || undefined,
-    });
+
+    const key = `${(c.row.address || "").trim().toLowerCase()}|${(c.row.bedrijf || "").trim().toLowerCase()}`;
+    const existingId = addressBedrijfToId.get(key);
+
+    if (existingId) {
+      toUpdate.push({ id: existingId, phone: c.phone });
+    } else {
+      toInsert.push({
+        phone_number: c.phone,
+        address: (c.row.address || "").trim(),
+        bedrijf: (c.row.bedrijf || "").trim(),
+        postcode: (c.row.postcode || "").trim(),
+        stad: (c.row.stad || "").trim(),
+        contactpersoon: c.row.contactpersoon?.trim() || undefined,
+        "extra-telefoon-nummer":
+          c.row["extra-telefoon-nummer"]?.trim() || undefined,
+      });
+    }
   }
 
+  // Insert new lifts
   let inserted = 0;
   if (toInsert.length > 0) {
     const records = toInsert.map((r) => ({
@@ -155,6 +171,16 @@ export async function POST(request: NextRequest) {
     inserted = count ?? records.length;
   }
 
+  // Update phone numbers for existing lifts matched by address+bedrijf
+  let updated = 0;
+  for (const upd of toUpdate) {
+    const { error: updateError } = await admin
+      .from("lifts")
+      .update({ phone_number: upd.phone })
+      .eq("id", upd.id);
+    if (!updateError) updated++;
+  }
+
   await logAudit(userClient, {
     user_id: user.id,
     user_email: user.email || null,
@@ -162,6 +188,7 @@ export async function POST(request: NextRequest) {
     details: {
       total_rows: body.rows.length,
       inserted,
+      updated,
       duplicates: duplicates.length,
       invalid: invalid.length,
     },
@@ -170,6 +197,7 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({
     success: true,
     inserted,
+    updated,
     duplicates: duplicates.length,
     invalid,
     duplicate_indices: duplicates,

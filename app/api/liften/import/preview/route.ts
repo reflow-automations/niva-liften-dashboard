@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
   }
 
   // Validate + normalize client-sent rows
-  const validPhones: string[] = [];
+  const validRows: { phone: string; address: string; bedrijf: string }[] = [];
   let invalidCount = 0;
   const seenInBatch = new Set<string>();
   let csvDupeCount = 0;
@@ -69,45 +69,58 @@ export async function POST(request: NextRequest) {
       continue;
     }
     seenInBatch.add(phone);
-    validPhones.push(phone);
+    validRows.push({ phone, address, bedrijf });
   }
 
-  // Fetch all existing phones from DB
+  // Fetch all existing lifts (phone + address + bedrijf) from DB
   const admin = createAdminSupabaseClient();
-  const existing = new Set<string>();
+  const existingByPhone = new Set<string>();
+  const existingByAddressBedrijf = new Set<string>(); // "address|bedrijf" (lowercase)
+
   let from = 0;
   const PAGE = 1000;
   while (true) {
     const { data, error } = await admin
       .from("lifts")
-      .select("phone_number")
+      .select("phone_number, address, bedrijf")
       .range(from, from + PAGE - 1);
     if (error) {
       return NextResponse.json({ error: "Failed to fetch existing lifts" }, { status: 500 });
     }
     if (!data || data.length === 0) break;
-    data.forEach((d) => existing.add(d.phone_number));
+    data.forEach((d) => {
+      existingByPhone.add(d.phone_number);
+      const key = `${(d.address || "").trim().toLowerCase()}|${(d.bedrijf || "").trim().toLowerCase()}`;
+      existingByAddressBedrijf.add(key);
+    });
     if (data.length < PAGE) break;
     from += PAGE;
   }
 
-  // Split valid phones into echt_nieuw vs al_in_db
   const db_duplicate_phones: string[] = [];
+  const update_phones: string[] = [];
   const new_phones: string[] = [];
 
-  for (const phone of validPhones) {
-    if (existing.has(phone)) {
-      db_duplicate_phones.push(phone);
+  for (const row of validRows) {
+    if (existingByPhone.has(row.phone)) {
+      db_duplicate_phones.push(row.phone);
     } else {
-      new_phones.push(phone);
+      const key = `${row.address.toLowerCase()}|${row.bedrijf.toLowerCase()}`;
+      if (existingByAddressBedrijf.has(key)) {
+        update_phones.push(row.phone);
+      } else {
+        new_phones.push(row.phone);
+      }
     }
   }
 
   return NextResponse.json({
     echt_nieuw: new_phones.length,
+    te_updaten: update_phones.length,
     al_in_db: db_duplicate_phones.length,
     csv_dupes: csvDupeCount,
     invalid: invalidCount,
     db_duplicate_phones,
+    update_phones,
   });
 }

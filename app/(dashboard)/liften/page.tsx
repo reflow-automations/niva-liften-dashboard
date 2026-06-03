@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase";
 import type { Lift } from "@/lib/types";
-import { Search, Building2, MapPin, CheckCircle2, XCircle, Clock, User, PhoneCall, ArrowUpDown, Upload } from "lucide-react";
+import { Search, Building2, MapPin, CheckCircle2, XCircle, Clock, User, PhoneCall, ArrowUpDown, Upload, Pencil, Trash2, Check, X } from "lucide-react";
 import { format, parseISO, isValid, differenceInDays } from "date-fns";
 import { nl } from "date-fns/locale";
 import ImportLiftenModal from "@/components/ImportLiftenModal";
@@ -63,6 +63,18 @@ export default function LiftenPage() {
   const [sortNewest, setSortNewest] = useState(true);
   const [showImport, setShowImport] = useState(false);
 
+  // Edit phone state
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editPhone, setEditPhone] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+  const editInputRef = useRef<HTMLInputElement>(null);
+
+  // Delete state
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<{ id: string; msg: string } | null>(null);
+
   async function fetchLiften() {
     const { data } = await supabase
       .from("lifts")
@@ -76,6 +88,14 @@ export default function LiftenPage() {
     fetchLiften();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Focus the edit input when it appears
+  useEffect(() => {
+    if (editingId && editInputRef.current) {
+      editInputRef.current.focus();
+      editInputRef.current.select();
+    }
+  }, [editingId]);
 
   const handleToggleActive = async (lift: Lift) => {
     setToggling(lift.id);
@@ -99,8 +119,74 @@ export default function LiftenPage() {
     setToggling(null);
   };
 
+  const startEdit = (lift: Lift) => {
+    setEditingId(lift.id);
+    setEditPhone(lift.phone_number);
+    setEditError(null);
+    setDeleteConfirmId(null);
+    setDeleteError(null);
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setEditPhone("");
+    setEditError(null);
+  };
+
+  const handleSavePhone = async (lift: Lift) => {
+    if (!editPhone.trim()) return;
+    setSavingEdit(true);
+    setEditError(null);
+
+    try {
+      const res = await fetch("/api/liften/update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lift_id: lift.id, phone_number: editPhone }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setEditError(json.error || "Opslaan mislukt");
+        setSavingEdit(false);
+        return;
+      }
+      setLiften((prev) =>
+        prev.map((l) => (l.id === lift.id ? { ...l, phone_number: json.phone_number } : l))
+      );
+      setEditingId(null);
+      setEditPhone("");
+    } catch {
+      setEditError("Netwerkfout");
+    }
+    setSavingEdit(false);
+  };
+
+  const handleDelete = async (lift: Lift) => {
+    setDeletingId(lift.id);
+    setDeleteError(null);
+
+    try {
+      const res = await fetch("/api/liften/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lift_id: lift.id }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setDeleteError({ id: lift.id, msg: json.error || "Verwijderen mislukt" });
+        setDeleteConfirmId(null);
+        setDeletingId(null);
+        return;
+      }
+      setLiften((prev) => prev.filter((l) => l.id !== lift.id));
+      setDeleteConfirmId(null);
+    } catch {
+      setDeleteError({ id: lift.id, msg: "Netwerkfout" });
+    }
+    setDeletingId(null);
+  };
+
   const filtered = liften.filter((lift) => {
-    // Search filter
     const q = search.toLowerCase();
     const matchesSearch =
       lift.bedrijf?.toLowerCase().includes(q) ||
@@ -110,13 +196,11 @@ export default function LiftenPage() {
       lift.phone_number?.includes(q) ||
       lift.contactpersoon?.toLowerCase().includes(q);
 
-    // Status filter
     const matchesStatus =
       statusFilter === "alle" ||
       (statusFilter === "actief" && lift.is_active) ||
       (statusFilter === "inactief" && !lift.is_active);
 
-    // Monteur test filter (operates on last_test_at)
     let matchesTest = true;
     if (testFilter !== "alle") {
       if (!lift.last_test_at) {
@@ -134,7 +218,6 @@ export default function LiftenPage() {
       }
     }
 
-    // DTMF test filter (operates on last_test_dtmf_at)
     let matchesDtmf = true;
     if (dtmfFilter !== "alle") {
       if (!lift.last_test_dtmf_at) {
@@ -154,7 +237,6 @@ export default function LiftenPage() {
 
     return matchesSearch && matchesStatus && matchesTest && matchesDtmf;
   }).sort((a, b) => {
-    // Liften zonder test altijd onderaan (bij newest) of bovenaan (bij oldest)
     if (!a.last_test_at && !b.last_test_at) return 0;
     if (!a.last_test_at) return sortNewest ? 1 : -1;
     if (!b.last_test_at) return sortNewest ? -1 : 1;
@@ -302,6 +384,11 @@ export default function LiftenPage() {
         {filtered.map((lift) => {
           const testStatus = getTestStatus(lift.last_test_at);
           const dtmfStatus = getDtmfTestStatus(lift.last_test_dtmf_at);
+          const isEditing = editingId === lift.id;
+          const isDelConfirm = deleteConfirmId === lift.id;
+          const isDeleting = deletingId === lift.id;
+          const delErr = deleteError?.id === lift.id ? deleteError.msg : null;
+
           return (
             <div
               key={lift.id}
@@ -322,19 +409,60 @@ export default function LiftenPage() {
                     </div>
                   </div>
                 </div>
-                <button
-                  onClick={() => handleToggleActive(lift)}
-                  disabled={toggling === lift.id}
-                  className="cursor-pointer flex-shrink-0 transition-transform hover:scale-110 disabled:opacity-50"
-                  title={lift.is_active ? "Klik om te deactiveren" : "Klik om te activeren"}
-                >
-                  {lift.is_active ? (
-                    <CheckCircle2 className="w-5 h-5 text-success" />
+
+                {/* Action buttons top-right */}
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  {isDelConfirm ? (
+                    <div className="flex items-center gap-1">
+                      <span className="text-xs text-danger font-medium">Verwijderen?</span>
+                      <button
+                        onClick={() => handleDelete(lift)}
+                        disabled={isDeleting}
+                        className="px-2 py-1 rounded text-xs bg-danger text-white font-medium hover:opacity-80 cursor-pointer disabled:opacity-50"
+                      >
+                        Ja
+                      </button>
+                      <button
+                        onClick={() => { setDeleteConfirmId(null); setDeleteError(null); }}
+                        className="px-2 py-1 rounded text-xs border border-border hover:bg-surface-hover cursor-pointer"
+                      >
+                        Nee
+                      </button>
+                    </div>
                   ) : (
-                    <XCircle className="w-5 h-5 text-danger" />
+                    <>
+                      <button
+                        onClick={() => {
+                          setDeleteConfirmId(lift.id);
+                          setDeleteError(null);
+                          cancelEdit();
+                        }}
+                        disabled={isDeleting}
+                        className="p-1.5 rounded-lg hover:bg-danger-muted text-text-muted hover:text-danger cursor-pointer transition-colors disabled:opacity-50"
+                        title="Lift verwijderen"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => handleToggleActive(lift)}
+                        disabled={toggling === lift.id}
+                        className="cursor-pointer transition-transform hover:scale-110 disabled:opacity-50 ml-0.5"
+                        title={lift.is_active ? "Klik om te deactiveren" : "Klik om te activeren"}
+                      >
+                        {lift.is_active ? (
+                          <CheckCircle2 className="w-5 h-5 text-success" />
+                        ) : (
+                          <XCircle className="w-5 h-5 text-danger" />
+                        )}
+                      </button>
+                    </>
                   )}
-                </button>
+                </div>
               </div>
+
+              {delErr && (
+                <p className="text-xs text-danger bg-danger-muted px-3 py-2 rounded-lg">{delErr}</p>
+              )}
 
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div>
@@ -344,8 +472,56 @@ export default function LiftenPage() {
                   </p>
                 </div>
                 <div>
-                  <p className="text-text-muted text-xs">Telefoon</p>
-                  <p className="font-mono text-xs">+{lift.phone_number}</p>
+                  <p className="text-text-muted text-xs mb-0.5">Telefoon</p>
+                  {isEditing ? (
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-1">
+                        <input
+                          ref={editInputRef}
+                          type="text"
+                          value={editPhone}
+                          onChange={(e) => setEditPhone(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") handleSavePhone(lift);
+                            if (e.key === "Escape") cancelEdit();
+                          }}
+                          className="w-full font-mono text-xs px-2 py-1 rounded border border-accent bg-surface focus:outline-none"
+                          placeholder="bijv. 0612345678"
+                          disabled={savingEdit}
+                        />
+                        <button
+                          onClick={() => handleSavePhone(lift)}
+                          disabled={savingEdit}
+                          className="p-1 rounded bg-success text-white hover:opacity-80 cursor-pointer disabled:opacity-50 flex-shrink-0"
+                          title="Opslaan"
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={cancelEdit}
+                          disabled={savingEdit}
+                          className="p-1 rounded border border-border hover:bg-surface-hover cursor-pointer flex-shrink-0"
+                          title="Annuleren"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                      {editError && (
+                        <p className="text-xs text-danger">{editError}</p>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1 group">
+                      <p className="font-mono text-xs">+{lift.phone_number}</p>
+                      <button
+                        onClick={() => startEdit(lift)}
+                        className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-surface-hover text-text-muted hover:text-text-primary cursor-pointer transition-opacity"
+                        title="Telefoonnummer bewerken"
+                      >
+                        <Pencil className="w-3 h-3" />
+                      </button>
+                    </div>
+                  )}
                 </div>
                 {lift.contactpersoon && (
                   <div className="flex items-start gap-1.5">

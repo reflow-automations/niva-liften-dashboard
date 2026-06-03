@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Papa from "papaparse";
-import { X, Upload, FileText, ArrowRight, Check, AlertCircle, Loader2, Database } from "lucide-react";
+import { X, Upload, FileText, ArrowRight, Check, AlertCircle, Loader2, Database, RefreshCw } from "lucide-react";
 import { normalizePhone } from "@/lib/phone";
 
 type DbField =
@@ -52,8 +52,7 @@ interface ParsedCsv {
   rows: Record<string, string>[];
 }
 
-// 4 possible statuses — "db_duplicate" added vs original
-type RowStatus = "new" | "csv_duplicate" | "db_duplicate" | "invalid";
+type RowStatus = "new" | "update" | "csv_duplicate" | "db_duplicate" | "invalid";
 
 interface PreviewRow {
   index: number;
@@ -65,10 +64,12 @@ interface PreviewRow {
 
 interface ServerCheck {
   echt_nieuw: number;
+  te_updaten: number;
   al_in_db: number;
   csv_dupes: number;
   invalid: number;
   db_duplicate_phones: Set<string>;
+  update_phones: Set<string>;
 }
 
 export default function ImportLiftenModal({ onClose, onImported }: Props) {
@@ -83,6 +84,7 @@ export default function ImportLiftenModal({ onClose, onImported }: Props) {
   const [serverCheck, setServerCheck] = useState<ServerCheck | null>(null);
   const [result, setResult] = useState<{
     inserted: number;
+    updated: number;
     duplicates: number;
     invalid: { index: number; reason: string }[];
   } | null>(null);
@@ -137,7 +139,7 @@ export default function ImportLiftenModal({ onClose, onImported }: Props) {
     return required.every((f) => mapped.has(f));
   }, [csv, mapping]);
 
-  // Client-side preview rows (CSV-level only — no DB knowledge yet)
+  // Client-side preview rows (CSV-level only - no DB knowledge yet)
   const clientRows = useMemo<PreviewRow[]>(() => {
     if (!csv) return [];
     const seen = new Set<string>();
@@ -162,31 +164,32 @@ export default function ImportLiftenModal({ onClose, onImported }: Props) {
     });
   }, [csv, mapping]);
 
-  // Merge server check result into rows — replace "new" with "db_duplicate" where applicable
+  // Merge server check result into rows
   const previewRows = useMemo<PreviewRow[]>(() => {
     if (!serverCheck) return clientRows;
     return clientRows.map((r) => {
       if (r.status === "new" && serverCheck.db_duplicate_phones.has(r.normalizedPhone)) {
         return { ...r, status: "db_duplicate", reason: "Al in database" };
       }
+      if (r.status === "new" && serverCheck.update_phones.has(r.normalizedPhone)) {
+        return { ...r, status: "update", reason: "Telefoonnummer wordt bijgewerkt" };
+      }
       return r;
     });
   }, [clientRows, serverCheck]);
 
   const counts = useMemo(() => {
-    const c = { new: 0, csv_duplicate: 0, db_duplicate: 0, invalid: 0 };
+    const c = { new: 0, update: 0, csv_duplicate: 0, db_duplicate: 0, invalid: 0 };
     previewRows.forEach((r) => c[r.status]++);
     return c;
   }, [previewRows]);
 
-  // Run server check when entering preview step
   const runServerCheck = useCallback(async () => {
     if (!csv) return;
     setChecking(true);
     setCheckError(null);
     setServerCheck(null);
 
-    // Send all client-valid rows to server (server will re-dedup + check DB)
     const payload = clientRows
       .filter((r) => r.status === "new" || r.status === "csv_duplicate")
       .map((r) => ({
@@ -209,10 +212,12 @@ export default function ImportLiftenModal({ onClose, onImported }: Props) {
       }
       setServerCheck({
         echt_nieuw: json.echt_nieuw,
+        te_updaten: json.te_updaten,
         al_in_db: json.al_in_db,
         csv_dupes: json.csv_dupes,
         invalid: json.invalid,
         db_duplicate_phones: new Set<string>(json.db_duplicate_phones),
+        update_phones: new Set<string>(json.update_phones),
       });
     } catch {
       setCheckError("Netwerkfout bij DB-controle");
@@ -220,7 +225,6 @@ export default function ImportLiftenModal({ onClose, onImported }: Props) {
     setChecking(false);
   }, [csv, clientRows]);
 
-  // Auto-trigger server check when entering preview
   useEffect(() => {
     if (step === "preview") {
       runServerCheck();
@@ -232,7 +236,7 @@ export default function ImportLiftenModal({ onClose, onImported }: Props) {
     setSubmitting(true);
     setServerError(null);
     const payload = previewRows
-      .filter((r) => r.status === "new")
+      .filter((r) => r.status === "new" || r.status === "update")
       .map((r) => ({
         phone_number: r.normalizedPhone,
         address: r.data.address,
@@ -257,6 +261,7 @@ export default function ImportLiftenModal({ onClose, onImported }: Props) {
       }
       setResult({
         inserted: json.inserted,
+        updated: json.updated ?? 0,
         duplicates: json.duplicates + counts.csv_duplicate + counts.db_duplicate,
         invalid: json.invalid || [],
       });
@@ -273,6 +278,8 @@ export default function ImportLiftenModal({ onClose, onImported }: Props) {
     setCheckError(null);
     setStep("preview");
   };
+
+  const actionCount = counts.new + counts.update;
 
   return (
     <div
@@ -424,8 +431,8 @@ export default function ImportLiftenModal({ onClose, onImported }: Props) {
                 </div>
               )}
 
-              {/* Counts — 4 tiles */}
-              <div className="grid grid-cols-4 gap-2">
+              {/* Counts - 5 tiles */}
+              <div className="grid grid-cols-5 gap-2">
                 <div className="p-3 rounded-xl bg-success-muted">
                   <p className="text-xs text-text-muted">Echt nieuw</p>
                   <p className="text-2xl font-bold text-success">
@@ -434,6 +441,13 @@ export default function ImportLiftenModal({ onClose, onImported }: Props) {
                   {serverCheck && (
                     <p className="text-xs text-success mt-0.5">DB gecheckt ✓</p>
                   )}
+                </div>
+                <div className="p-3 rounded-xl bg-accent-muted border border-accent/20">
+                  <p className="text-xs text-text-muted">Bijwerken</p>
+                  <p className="text-2xl font-bold text-accent">
+                    {checking ? "…" : counts.update}
+                  </p>
+                  <p className="text-xs text-text-muted mt-0.5">nummer update</p>
                 </div>
                 <div className="p-3 rounded-xl bg-surface-hover border border-border">
                   <p className="text-xs text-text-muted">Al in DB</p>
@@ -482,6 +496,14 @@ export default function ImportLiftenModal({ onClose, onImported }: Props) {
                             {r.status === "new" && (
                               <span className="px-2 py-0.5 rounded text-xs bg-success-muted text-success">
                                 Nieuw
+                              </span>
+                            )}
+                            {r.status === "update" && (
+                              <span
+                                className="px-2 py-0.5 rounded text-xs bg-accent-muted text-accent"
+                                title={r.reason}
+                              >
+                                Bijwerken
                               </span>
                             )}
                             {r.status === "db_duplicate" && (
@@ -547,9 +569,10 @@ export default function ImportLiftenModal({ onClose, onImported }: Props) {
               <div>
                 <p className="text-xl font-semibold">Import voltooid</p>
                 <p className="text-sm text-text-secondary mt-1">
-                  {result.inserted} liften toegevoegd,{" "}
-                  {result.duplicates} duplicaten geskipt,{" "}
-                  {result.invalid.length} fouten.
+                  {result.inserted} liften toegevoegd
+                  {result.updated > 0 && `, ${result.updated} nummers bijgewerkt`}
+                  {result.duplicates > 0 && `, ${result.duplicates} duplicaten geskipt`}
+                  {result.invalid.length > 0 && `, ${result.invalid.length} fouten`}.
                 </p>
               </div>
             </div>
@@ -595,15 +618,29 @@ export default function ImportLiftenModal({ onClose, onImported }: Props) {
                   Terug
                 </button>
                 <button
-                  disabled={submitting || checking || counts.new === 0 || !!checkError}
+                  disabled={submitting || checking || actionCount === 0 || !!checkError}
                   onClick={handleImport}
                   className="px-4 py-2 rounded-lg text-sm bg-accent text-white font-medium hover:opacity-90 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
                 >
-                  {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
                   {checking ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
                       Controleren...
+                    </>
+                  ) : submitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Bezig...
+                    </>
+                  ) : counts.update > 0 && counts.new === 0 ? (
+                    <>
+                      <RefreshCw className="w-4 h-4" />
+                      Update {counts.update} nummers
+                    </>
+                  ) : counts.update > 0 ? (
+                    <>
+                      <Database className="w-4 h-4" />
+                      Importeer {counts.new} + update {counts.update}
                     </>
                   ) : (
                     <>

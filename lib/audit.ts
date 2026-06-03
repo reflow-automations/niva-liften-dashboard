@@ -4,6 +4,8 @@ export type AuditAction =
   | "killswitch_toggled"
   | "lift_toggled"
   | "lift_imported"
+  | "lift_phone_updated"
+  | "lift_deleted"
   | "user_login"
   | "user_logout";
 
