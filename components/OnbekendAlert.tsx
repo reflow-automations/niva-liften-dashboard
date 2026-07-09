@@ -5,10 +5,10 @@ import { createClient } from "@/lib/supabase";
 
 // Watcher voor "onbekend"-calls (stille calls die niet naar de noodcentrale gingen).
 // Speelt een ping bij binnenkomst van een nieuwe, niet-gecontroleerde melding en
-// maximaal één herinnering na 5 minuten als de checkbox nog niet is gezet.
+// herinneringen na 5 en 10 minuten als de checkbox nog niet is gezet (max 3 pings totaal).
 const POLL_INTERVAL_MS = 30_000;
 const REMIND_INTERVAL_MS = 5 * 60_000;
-const MAX_PINGS_PER_CALL = 2;
+const MAX_PINGS_PER_CALL = 3;
 const LOOKBACK_HOURS = 24;
 
 export default function OnbekendAlert() {
