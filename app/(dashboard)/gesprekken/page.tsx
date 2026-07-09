@@ -70,6 +70,21 @@ export default function GesprekkenPage() {
       setLoading(false);
     }
     fetchCalls();
+
+    // Live updates: nieuwe/gewijzigde gesprekken (incl. onbekend-meldingen)
+    // verschijnen zonder handmatige refresh.
+    const channel = supabase
+      .channel("call_logs-changes")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "call_logs" },
+        () => fetchCalls()
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

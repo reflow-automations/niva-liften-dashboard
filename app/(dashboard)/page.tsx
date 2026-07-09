@@ -113,6 +113,19 @@ export default function DashboardPage() {
       setLoading(false);
     }
     fetchData();
+
+    const channel = supabase
+      .channel("dashboard-call_logs-changes")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "call_logs" },
+        () => fetchData()
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

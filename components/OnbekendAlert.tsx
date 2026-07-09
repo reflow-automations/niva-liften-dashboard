@@ -105,10 +105,22 @@ export default function OnbekendAlert() {
     }
 
     poll();
+    // 30s-poll blijft als vangnet; realtime zorgt dat een nieuwe onbekend-melding
+    // vrijwel direct pingt in plaats van pas bij de volgende poll-ronde.
     const interval = setInterval(poll, POLL_INTERVAL_MS);
+    const channel = supabase
+      .channel("onbekend-alert-changes")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "call_logs" },
+        () => poll()
+      )
+      .subscribe();
+
     return () => {
       stopped = true;
       clearInterval(interval);
+      supabase.removeChannel(channel);
       window.removeEventListener("pointerdown", unlockAudio);
       window.removeEventListener("keydown", unlockAudio);
     };
