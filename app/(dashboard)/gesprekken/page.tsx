@@ -18,6 +18,7 @@ const CALL_TYPE_OPTIONS = [
   { value: "test_dtmf", label: "DTMF test" },
   { value: "monteur", label: "Monteur test" },
   { value: "noodoproep", label: "Noodoproep" },
+  { value: "onbekend", label: "Onbekend" },
   { value: WRONG_NUMBER, label: "Nummer verkeerd" },
 ];
 
@@ -71,6 +72,29 @@ export default function GesprekkenPage() {
     fetchCalls();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  async function toggleAcknowledged(call: CallLog, next: boolean) {
+    const previous = call.acknowledged_at;
+    setCalls((prev) =>
+      prev.map((c) =>
+        c.id === call.id
+          ? { ...c, acknowledged_at: next ? new Date().toISOString() : null }
+          : c
+      )
+    );
+    const res = await fetch("/api/calls/acknowledge", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ call_id: call.id, acknowledged: next }),
+    });
+    if (!res.ok) {
+      setCalls((prev) =>
+        prev.map((c) =>
+          c.id === call.id ? { ...c, acknowledged_at: previous } : c
+        )
+      );
+    }
+  }
 
   const filtered = calls.filter((call) => {
     if (typeFilter) {
@@ -192,11 +216,17 @@ export default function GesprekkenPage() {
             <tbody className="divide-y divide-border-subtle">
               {filtered.map((call) => {
                 const isWrongNumber = call.call_type === WRONG_NUMBER;
+                const isOnbekend = call.call_type === "onbekend";
+                const needsCheck = isOnbekend && !call.acknowledged_at;
                 return (
                 <tr
                   key={call.id}
                   className={`hover:bg-surface-hover/50 transition-colors group cursor-pointer ${
-                    isWrongNumber ? "row-wrong-number" : ""
+                    isWrongNumber
+                      ? "row-wrong-number"
+                      : needsCheck
+                      ? "row-onbekend"
+                      : ""
                   }`}
                   onClick={() => window.location.href = `/gesprekken/${call.id}`}
                 >
@@ -237,7 +267,30 @@ export default function GesprekkenPage() {
                     </td>
                   )}
                   <td className="px-6 py-4">
-                    <ChevronRight className="w-4 h-4 text-text-muted group-hover:text-accent transition-colors" />
+                    <div className="flex items-center justify-end gap-3">
+                      {isOnbekend && (
+                        <label
+                          onClick={(e) => e.stopPropagation()}
+                          className={`flex items-center gap-1.5 text-xs whitespace-nowrap cursor-pointer select-none ${
+                            call.acknowledged_at
+                              ? "text-text-muted"
+                              : "text-[#f97316] font-medium"
+                          }`}
+                          title="Vink aan als de melding gecontroleerd is (bv. transcriptie geluisterd)"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={!!call.acknowledged_at}
+                            onChange={(e) =>
+                              toggleAcknowledged(call, e.target.checked)
+                            }
+                            className="w-4 h-4 accent-[#f97316] cursor-pointer"
+                          />
+                          Gecontroleerd
+                        </label>
+                      )}
+                      <ChevronRight className="w-4 h-4 text-text-muted group-hover:text-accent transition-colors" />
+                    </div>
                   </td>
                 </tr>
                 );

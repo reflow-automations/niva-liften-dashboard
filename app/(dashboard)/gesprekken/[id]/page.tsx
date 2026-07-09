@@ -131,6 +131,25 @@ export default function GesprekDetailPage() {
     };
   }, [audioUrl]);
 
+  async function toggleAcknowledged(next: boolean) {
+    if (!call) return;
+    const previous = call.acknowledged_at;
+    setCall({
+      ...call,
+      acknowledged_at: next ? new Date().toISOString() : null,
+    });
+    const res = await fetch("/api/calls/acknowledge", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ call_id: call.id, acknowledged: next }),
+    });
+    if (!res.ok) {
+      setCall((prev) =>
+        prev ? { ...prev, acknowledged_at: previous } : prev
+      );
+    }
+  }
+
   const togglePlay = () => {
     const audio = audioRef.current;
     if (!audio) return;
@@ -268,6 +287,24 @@ export default function GesprekDetailPage() {
           <span className="inline-flex items-center px-3 py-1.5 rounded-xl text-sm font-medium bg-warning-muted text-warning">
             Fallback: {call.fallback_reason}
           </span>
+        )}
+        {call.call_type === "onbekend" && (
+          <label
+            className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-sm font-medium cursor-pointer select-none border transition-colors ${
+              call.acknowledged_at
+                ? "bg-surface-hover text-text-secondary border-border"
+                : "bg-[#f9731620] text-[#f97316] border-[#f97316]"
+            }`}
+            title="Vink aan als de melding gecontroleerd is (bv. transcriptie geluisterd)"
+          >
+            <input
+              type="checkbox"
+              checked={!!call.acknowledged_at}
+              onChange={(e) => toggleAcknowledged(e.target.checked)}
+              className="w-4 h-4 accent-[#f97316] cursor-pointer"
+            />
+            Gecontroleerd
+          </label>
         )}
       </div>
 

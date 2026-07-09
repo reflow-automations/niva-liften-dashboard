@@ -32,6 +32,7 @@ export interface CallLog {
   occupancy: string | null;
   call_cost_usd: number | null;
   fallback_reason: string | null;
+  acknowledged_at: string | null;
   model_llm_version: string | null;
   is_anonymized: boolean | null;
   anonymized_at: string | null;

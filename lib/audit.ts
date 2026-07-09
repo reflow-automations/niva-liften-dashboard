@@ -6,6 +6,7 @@ export type AuditAction =
   | "lift_imported"
   | "lift_phone_updated"
   | "lift_deleted"
+  | "call_acknowledged"
   | "user_login"
   | "user_logout";
 
