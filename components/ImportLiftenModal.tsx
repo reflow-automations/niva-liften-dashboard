@@ -52,7 +52,7 @@ interface ParsedCsv {
   rows: Record<string, string>[];
 }
 
-type RowStatus = "new" | "update" | "csv_duplicate" | "db_duplicate" | "invalid";
+type RowStatus = "new" | "update" | "ambiguous" | "csv_duplicate" | "db_duplicate" | "invalid";
 
 interface PreviewRow {
   index: number;
@@ -65,11 +65,13 @@ interface PreviewRow {
 interface ServerCheck {
   echt_nieuw: number;
   te_updaten: number;
+  niet_eenduidig: number;
   al_in_db: number;
   csv_dupes: number;
   invalid: number;
   db_duplicate_phones: Set<string>;
   update_phones: Set<string>;
+  ambiguous_phones: Set<string>;
 }
 
 export default function ImportLiftenModal({ onClose, onImported }: Props) {
@@ -174,12 +176,15 @@ export default function ImportLiftenModal({ onClose, onImported }: Props) {
       if (r.status === "new" && serverCheck.update_phones.has(r.normalizedPhone)) {
         return { ...r, status: "update", reason: "Telefoonnummer wordt bijgewerkt" };
       }
+      if (r.status === "new" && serverCheck.ambiguous_phones.has(r.normalizedPhone)) {
+        return { ...r, status: "ambiguous", reason: "Meerdere liften op dit adres+bedrijf: niet te bepalen welke lift dit nummer moet krijgen. Pas handmatig aan via het liftenoverzicht." };
+      }
       return r;
     });
   }, [clientRows, serverCheck]);
 
   const counts = useMemo(() => {
-    const c = { new: 0, update: 0, csv_duplicate: 0, db_duplicate: 0, invalid: 0 };
+    const c = { new: 0, update: 0, ambiguous: 0, csv_duplicate: 0, db_duplicate: 0, invalid: 0 };
     previewRows.forEach((r) => c[r.status]++);
     return c;
   }, [previewRows]);
@@ -213,11 +218,13 @@ export default function ImportLiftenModal({ onClose, onImported }: Props) {
       setServerCheck({
         echt_nieuw: json.echt_nieuw,
         te_updaten: json.te_updaten,
+        niet_eenduidig: json.niet_eenduidig ?? 0,
         al_in_db: json.al_in_db,
         csv_dupes: json.csv_dupes,
         invalid: json.invalid,
         db_duplicate_phones: new Set<string>(json.db_duplicate_phones),
         update_phones: new Set<string>(json.update_phones),
+        ambiguous_phones: new Set<string>(json.ambiguous_phones || []),
       });
     } catch {
       setCheckError("Netwerkfout bij DB-controle");
@@ -431,8 +438,8 @@ export default function ImportLiftenModal({ onClose, onImported }: Props) {
                 </div>
               )}
 
-              {/* Counts - 5 tiles */}
-              <div className="grid grid-cols-5 gap-2">
+              {/* Counts - 6 tiles */}
+              <div className="grid grid-cols-6 gap-2">
                 <div className="p-3 rounded-xl bg-success-muted">
                   <p className="text-xs text-text-muted">Echt nieuw</p>
                   <p className="text-2xl font-bold text-success">
@@ -448,6 +455,13 @@ export default function ImportLiftenModal({ onClose, onImported }: Props) {
                     {checking ? "…" : counts.update}
                   </p>
                   <p className="text-xs text-text-muted mt-0.5">nummer update</p>
+                </div>
+                <div className="p-3 rounded-xl bg-warning-muted border border-warning/20" title="Meerdere liften delen dit adres+bedrijf; niet te bepalen welke lift het nummer moet krijgen. Pas handmatig aan via het liftenoverzicht.">
+                  <p className="text-xs text-text-muted">Niet eenduidig</p>
+                  <p className="text-2xl font-bold text-warning">
+                    {checking ? "…" : counts.ambiguous}
+                  </p>
+                  <p className="text-xs text-text-muted mt-0.5">handmatig</p>
                 </div>
                 <div className="p-3 rounded-xl bg-surface-hover border border-border">
                   <p className="text-xs text-text-muted">Al in DB</p>
@@ -504,6 +518,14 @@ export default function ImportLiftenModal({ onClose, onImported }: Props) {
                                 title={r.reason}
                               >
                                 Bijwerken
+                              </span>
+                            )}
+                            {r.status === "ambiguous" && (
+                              <span
+                                className="px-2 py-0.5 rounded text-xs bg-warning-muted text-warning"
+                                title={r.reason}
+                              >
+                                Niet eenduidig
                               </span>
                             )}
                             {r.status === "db_duplicate" && (

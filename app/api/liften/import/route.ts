@@ -85,9 +85,13 @@ export async function POST(request: NextRequest) {
     cleaned.push({ row: r, phone, index: i });
   });
 
-  // Fetch existing lifts with id + address + bedrijf for update matching
+  // Fetch existing lifts with id + address + bedrijf for update matching.
+  // NB: one address+bedrijf can legitimately hold MULTIPLE lifts (building with
+  // several elevators, each with its own phone). Updating on this key is only
+  // safe when exactly ONE lift in the DB has it — otherwise we'd overwrite a
+  // sibling lift's number. Track all ids per key and skip ambiguous ones.
   const existingByPhone = new Set<string>();
-  const addressBedrijfToId = new Map<string, string>(); // "addr|bedrijf" -> lift id
+  const addressBedrijfToIds = new Map<string, string[]>(); // "addr|bedrijf" -> lift ids
 
   let from = 0;
   const PAGE = 1000;
@@ -106,16 +110,28 @@ export async function POST(request: NextRequest) {
     data.forEach((d) => {
       existingByPhone.add(d.phone_number);
       const key = `${(d.address || "").trim().toLowerCase()}|${(d.bedrijf || "").trim().toLowerCase()}`;
-      addressBedrijfToId.set(key, d.id);
+      const ids = addressBedrijfToIds.get(key) || [];
+      ids.push(d.id);
+      addressBedrijfToIds.set(key, ids);
     });
     if (data.length < PAGE) break;
     from += PAGE;
+  }
+
+  // Count CSV rows per address+bedrijf key: if the CSV itself has multiple rows
+  // for one key (multiple lifts in one building), an update match is ambiguous too.
+  const batchKeyCount = new Map<string, number>();
+  for (const c of cleaned) {
+    if (existingByPhone.has(c.phone)) continue; // will be skipped as duplicate anyway
+    const key = `${(c.row.address || "").trim().toLowerCase()}|${(c.row.bedrijf || "").trim().toLowerCase()}`;
+    batchKeyCount.set(key, (batchKeyCount.get(key) || 0) + 1);
   }
 
   // Categorize: insert, update (same address+bedrijf but different phone), or duplicate
   const toInsert: IncomingRow[] = [];
   const toUpdate: { id: string; phone: string }[] = [];
   const duplicates: number[] = [];
+  const ambiguous: number[] = [];
   const seenInBatch = new Set<string>();
 
   for (const c of cleaned) {
@@ -126,10 +142,14 @@ export async function POST(request: NextRequest) {
     seenInBatch.add(c.phone);
 
     const key = `${(c.row.address || "").trim().toLowerCase()}|${(c.row.bedrijf || "").trim().toLowerCase()}`;
-    const existingId = addressBedrijfToId.get(key);
+    const existingIds = addressBedrijfToIds.get(key);
 
-    if (existingId) {
-      toUpdate.push({ id: existingId, phone: c.phone });
+    if (existingIds && (existingIds.length > 1 || (batchKeyCount.get(key) || 0) > 1)) {
+      // Multiple lifts share this address+bedrijf (in DB and/or in the CSV):
+      // updating would overwrite a sibling lift's number. Skip; needs manual fix.
+      ambiguous.push(c.index);
+    } else if (existingIds && existingIds.length === 1) {
+      toUpdate.push({ id: existingIds[0], phone: c.phone });
     } else {
       toInsert.push({
         phone_number: c.phone,
@@ -190,6 +210,7 @@ export async function POST(request: NextRequest) {
       inserted,
       updated,
       duplicates: duplicates.length,
+      ambiguous: ambiguous.length,
       invalid: invalid.length,
     },
   });
@@ -199,7 +220,9 @@ export async function POST(request: NextRequest) {
     inserted,
     updated,
     duplicates: duplicates.length,
+    ambiguous: ambiguous.length,
     invalid,
     duplicate_indices: duplicates,
+    ambiguous_indices: ambiguous,
   });
 }
