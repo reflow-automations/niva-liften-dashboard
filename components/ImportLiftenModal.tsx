@@ -15,6 +15,15 @@ type DbField =
   | "extra-telefoon-nummer"
   | "__ignore__";
 
+const STATUS_LABELS: Record<RowStatus, string> = {
+  new: "Nieuw",
+  update: "Bijwerken",
+  ambiguous: "Niet eenduidig",
+  db_duplicate: "Al in DB",
+  csv_duplicate: "CSV-dupe",
+  invalid: "Fout",
+};
+
 const DB_FIELDS: { value: DbField; label: string; required: boolean }[] = [
   { value: "phone_number", label: "Telefoonnummer", required: true },
   { value: "address", label: "Adres", required: true },
@@ -91,6 +100,7 @@ export default function ImportLiftenModal({ onClose, onImported }: Props) {
     invalid: { index: number; reason: string }[];
   } | null>(null);
   const [serverError, setServerError] = useState<string | null>(null);
+  const [tableFilter, setTableFilter] = useState<RowStatus | "all">("all");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFile = (file: File) => {
@@ -283,8 +293,17 @@ export default function ImportLiftenModal({ onClose, onImported }: Props) {
   const goToPreview = () => {
     setServerCheck(null);
     setCheckError(null);
+    setTableFilter("all");
     setStep("preview");
   };
+
+  const filteredRows = useMemo(
+    () => (tableFilter === "all" ? previewRows : previewRows.filter((r) => r.status === tableFilter)),
+    [previewRows, tableFilter]
+  );
+
+  const toggleFilter = (status: RowStatus) =>
+    setTableFilter((f) => (f === status ? "all" : status));
 
   const actionCount = counts.new + counts.update;
 
@@ -438,9 +457,12 @@ export default function ImportLiftenModal({ onClose, onImported }: Props) {
                 </div>
               )}
 
-              {/* Counts - 6 tiles */}
+              {/* Counts - 6 clickable filter tiles */}
               <div className="grid grid-cols-6 gap-2">
-                <div className="p-3 rounded-xl bg-success-muted">
+                <button
+                  onClick={() => toggleFilter("new")}
+                  className={`text-left p-3 rounded-xl bg-success-muted cursor-pointer transition-all ${tableFilter === "new" ? "ring-2 ring-success" : "hover:opacity-80"}`}
+                >
                   <p className="text-xs text-text-muted">Echt nieuw</p>
                   <p className="text-2xl font-bold text-success">
                     {checking ? <Loader2 className="w-5 h-5 animate-spin mt-1" /> : counts.new}
@@ -448,65 +470,93 @@ export default function ImportLiftenModal({ onClose, onImported }: Props) {
                   {serverCheck && (
                     <p className="text-xs text-success mt-0.5">DB gecheckt ✓</p>
                   )}
-                </div>
-                <div className="p-3 rounded-xl bg-accent-muted border border-accent/20">
+                </button>
+                <button
+                  onClick={() => toggleFilter("update")}
+                  className={`text-left p-3 rounded-xl bg-accent-muted border border-accent/20 cursor-pointer transition-all ${tableFilter === "update" ? "ring-2 ring-accent" : "hover:opacity-80"}`}
+                >
                   <p className="text-xs text-text-muted">Bijwerken</p>
                   <p className="text-2xl font-bold text-accent">
                     {checking ? "…" : counts.update}
                   </p>
                   <p className="text-xs text-text-muted mt-0.5">nummer update</p>
-                </div>
-                <div className="p-3 rounded-xl bg-warning-muted border border-warning/20" title="Meerdere liften delen dit adres+bedrijf; niet te bepalen welke lift het nummer moet krijgen. Pas handmatig aan via het liftenoverzicht.">
+                </button>
+                <button
+                  onClick={() => toggleFilter("ambiguous")}
+                  title="Meerdere liften delen dit adres+bedrijf; niet te bepalen welke lift het nummer moet krijgen. Pas handmatig aan via het liftenoverzicht."
+                  className={`text-left p-3 rounded-xl bg-warning-muted border border-warning/20 cursor-pointer transition-all ${tableFilter === "ambiguous" ? "ring-2 ring-warning" : "hover:opacity-80"}`}
+                >
                   <p className="text-xs text-text-muted">Niet eenduidig</p>
                   <p className="text-2xl font-bold text-warning">
                     {checking ? "…" : counts.ambiguous}
                   </p>
                   <p className="text-xs text-text-muted mt-0.5">handmatig</p>
-                </div>
-                <div className="p-3 rounded-xl bg-surface-hover border border-border">
+                </button>
+                <button
+                  onClick={() => toggleFilter("db_duplicate")}
+                  className={`text-left p-3 rounded-xl bg-surface-hover border border-border cursor-pointer transition-all ${tableFilter === "db_duplicate" ? "ring-2 ring-text-secondary" : "hover:opacity-80"}`}
+                >
                   <p className="text-xs text-text-muted">Al in DB</p>
                   <p className="text-2xl font-bold text-text-secondary">
                     {checking ? "…" : counts.db_duplicate}
                   </p>
                   <p className="text-xs text-text-muted mt-0.5">skip</p>
-                </div>
-                <div className="p-3 rounded-xl bg-warning-muted">
+                </button>
+                <button
+                  onClick={() => toggleFilter("csv_duplicate")}
+                  className={`text-left p-3 rounded-xl bg-warning-muted cursor-pointer transition-all ${tableFilter === "csv_duplicate" ? "ring-2 ring-warning" : "hover:opacity-80"}`}
+                >
                   <p className="text-xs text-text-muted">CSV-dupe</p>
                   <p className="text-2xl font-bold text-warning">
                     {counts.csv_duplicate}
                   </p>
                   <p className="text-xs text-text-muted mt-0.5">skip</p>
-                </div>
-                <div className="p-3 rounded-xl bg-danger-muted">
+                </button>
+                <button
+                  onClick={() => toggleFilter("invalid")}
+                  className={`text-left p-3 rounded-xl bg-danger-muted cursor-pointer transition-all ${tableFilter === "invalid" ? "ring-2 ring-danger" : "hover:opacity-80"}`}
+                >
                   <p className="text-xs text-text-muted">Fout</p>
                   <p className="text-2xl font-bold text-danger">{counts.invalid}</p>
                   <p className="text-xs text-text-muted mt-0.5">skip</p>
-                </div>
+                </button>
               </div>
+              {tableFilter !== "all" && (
+                <button
+                  onClick={() => setTableFilter("all")}
+                  className="text-xs text-accent hover:underline cursor-pointer"
+                >
+                  ✕ Filter wissen (alle rijen tonen)
+                </button>
+              )}
 
               {/* Table */}
               <div className="border border-border rounded-xl overflow-hidden">
-                <div className="max-h-80 overflow-y-auto">
-                  <table className="w-full text-sm">
+                <div className="max-h-80 overflow-auto">
+                  <table className="text-sm">
                     <thead className="bg-surface-hover sticky top-0">
                       <tr className="text-left text-xs text-text-muted">
-                        <th className="px-3 py-2 font-medium">#</th>
-                        <th className="px-3 py-2 font-medium">Status</th>
-                        <th className="px-3 py-2 font-medium">Bedrijf</th>
-                        <th className="px-3 py-2 font-medium">Adres</th>
-                        <th className="px-3 py-2 font-medium">Telefoon</th>
+                        <th className="px-3 py-2 font-medium whitespace-nowrap">#</th>
+                        <th className="px-3 py-2 font-medium whitespace-nowrap">Status</th>
+                        <th className="px-3 py-2 font-medium whitespace-nowrap">Bedrijf</th>
+                        <th className="px-3 py-2 font-medium whitespace-nowrap">Adres</th>
+                        <th className="px-3 py-2 font-medium whitespace-nowrap">Postcode</th>
+                        <th className="px-3 py-2 font-medium whitespace-nowrap">Stad</th>
+                        <th className="px-3 py-2 font-medium whitespace-nowrap">Telefoon</th>
+                        <th className="px-3 py-2 font-medium whitespace-nowrap">Contactpersoon</th>
+                        <th className="px-3 py-2 font-medium whitespace-nowrap">Extra telefoon</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {previewRows.slice(0, 200).map((r) => (
+                      {filteredRows.slice(0, 500).map((r) => (
                         <tr
                           key={r.index}
                           className="border-t border-border-subtle"
                         >
-                          <td className="px-3 py-2 text-text-muted">
+                          <td className="px-3 py-2 text-text-muted whitespace-nowrap">
                             {r.index + 2}
                           </td>
-                          <td className="px-3 py-2">
+                          <td className="px-3 py-2 whitespace-nowrap">
                             {r.status === "new" && (
                               <span className="px-2 py-0.5 rounded text-xs bg-success-muted text-success">
                                 Nieuw
@@ -553,23 +603,40 @@ export default function ImportLiftenModal({ onClose, onImported }: Props) {
                               </span>
                             )}
                           </td>
-                          <td className="px-3 py-2 truncate max-w-40">
+                          <td className="px-3 py-2 whitespace-nowrap max-w-48 truncate">
                             {r.data.bedrijf || "—"}
                           </td>
-                          <td className="px-3 py-2 truncate max-w-40">
+                          <td className="px-3 py-2 whitespace-nowrap max-w-48 truncate">
                             {r.data.address || "—"}
                           </td>
-                          <td className="px-3 py-2 font-mono text-xs">
+                          <td className="px-3 py-2 whitespace-nowrap">
+                            {r.data.postcode || "—"}
+                          </td>
+                          <td className="px-3 py-2 whitespace-nowrap">
+                            {r.data.stad || "—"}
+                          </td>
+                          <td className="px-3 py-2 font-mono text-xs whitespace-nowrap">
                             {r.normalizedPhone || "—"}
+                          </td>
+                          <td className="px-3 py-2 whitespace-nowrap">
+                            {r.data.contactpersoon || "—"}
+                          </td>
+                          <td className="px-3 py-2 whitespace-nowrap">
+                            {r.data["extra-telefoon-nummer"] || "—"}
                           </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
-                {previewRows.length > 200 && (
+                {filteredRows.length > 500 && (
                   <div className="px-3 py-2 text-xs text-text-muted bg-surface-hover border-t border-border">
-                    Eerste 200 van {previewRows.length} rijen weergegeven
+                    Eerste 500 van {filteredRows.length} rijen weergegeven — gebruik de filters hierboven om in te zoomen
+                  </div>
+                )}
+                {tableFilter !== "all" && (
+                  <div className="px-3 py-2 text-xs text-text-muted bg-surface-hover border-t border-border">
+                    {filteredRows.length} rijen met status &ldquo;{STATUS_LABELS[tableFilter]}&rdquo;
                   </div>
                 )}
               </div>
