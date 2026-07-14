@@ -29,28 +29,6 @@ function getTestStatus(lastTestAt: string | null): {
   }
 }
 
-// DTMF tests run every 3 days from elevator hardware. Tighter freshness threshold.
-function getDtmfTestStatus(lastTestAt: string | null): {
-  label: string;
-  color: string;
-  bgColor: string;
-} {
-  if (!lastTestAt) {
-    return { label: "Nooit getest", color: "text-text-muted", bgColor: "bg-surface-hover" };
-  }
-  const d = parseISO(lastTestAt);
-  if (!isValid(d)) return { label: "Onbekend", color: "text-text-muted", bgColor: "bg-surface-hover" };
-
-  const daysSince = differenceInDays(new Date(), d);
-  if (daysSince <= 4) {
-    return { label: "Recent getest", color: "text-success", bgColor: "bg-success-muted" };
-  } else if (daysSince <= 7) {
-    return { label: `${daysSince}d geleden`, color: "text-warning", bgColor: "bg-warning-muted" };
-  } else {
-    return { label: `${daysSince}d geleden`, color: "text-danger", bgColor: "bg-danger-muted" };
-  }
-}
-
 export default function LiftenPage() {
   const supabase = createClient();
   const [liften, setLiften] = useState<Lift[]>([]);
@@ -58,7 +36,6 @@ export default function LiftenPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"alle" | "actief" | "inactief">("alle");
   const [testFilter, setTestFilter] = useState<"alle" | "recent" | "verouderd" | "nooit">("alle");
-  const [dtmfFilter, setDtmfFilter] = useState<"alle" | "recent" | "verouderd" | "nooit">("alle");
   const [toggling, setToggling] = useState<string | null>(null);
   const [sortNewest, setSortNewest] = useState(true);
   const [showImport, setShowImport] = useState(false);
@@ -218,24 +195,7 @@ export default function LiftenPage() {
       }
     }
 
-    let matchesDtmf = true;
-    if (dtmfFilter !== "alle") {
-      if (!lift.last_test_dtmf_at) {
-        matchesDtmf = dtmfFilter === "nooit";
-      } else {
-        const d = parseISO(lift.last_test_dtmf_at);
-        if (!isValid(d)) {
-          matchesDtmf = dtmfFilter === "nooit";
-        } else {
-          const daysSince = differenceInDays(new Date(), d);
-          if (dtmfFilter === "recent") matchesDtmf = daysSince <= 4;
-          else if (dtmfFilter === "verouderd") matchesDtmf = daysSince > 7;
-          else matchesDtmf = false;
-        }
-      }
-    }
-
-    return matchesSearch && matchesStatus && matchesTest && matchesDtmf;
+    return matchesSearch && matchesStatus && matchesTest;
   }).sort((a, b) => {
     if (!a.last_test_at && !b.last_test_at) return 0;
     if (!a.last_test_at) return sortNewest ? 1 : -1;
@@ -339,31 +299,6 @@ export default function LiftenPage() {
           </div>
         </div>
 
-        {/* DTMF test filter */}
-        <div className="flex flex-col gap-1">
-          <span className="text-xs text-text-muted px-1">DTMF test</span>
-          <div className="flex rounded-xl overflow-hidden border border-border">
-            {([
-              { value: "alle", label: "Alle" },
-              { value: "recent", label: "Recent" },
-              { value: "verouderd", label: ">7d" },
-              { value: "nooit", label: "Nooit" },
-            ] as const).map((option) => (
-              <button
-                key={option.value}
-                onClick={() => setDtmfFilter(option.value)}
-                className={`px-3 py-2 text-sm font-medium transition-colors cursor-pointer ${
-                  dtmfFilter === option.value
-                    ? "bg-accent text-white"
-                    : "bg-surface text-text-secondary hover:bg-surface-hover"
-                }`}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
         {/* Sort toggle */}
         <button
           onClick={() => setSortNewest(!sortNewest)}
@@ -383,7 +318,6 @@ export default function LiftenPage() {
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
         {filtered.map((lift) => {
           const testStatus = getTestStatus(lift.last_test_at);
-          const dtmfStatus = getDtmfTestStatus(lift.last_test_dtmf_at);
           const isEditing = editingId === lift.id;
           const isDelConfirm = deleteConfirmId === lift.id;
           const isDeleting = deletingId === lift.id;
@@ -557,21 +491,6 @@ export default function LiftenPage() {
                           locale: nl,
                         })
                       : testStatus.label}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Clock className="w-3.5 h-3.5 text-text-muted" />
-                    <span className="text-xs text-text-muted">DTMF test</span>
-                  </div>
-                  <span
-                    className={`text-xs font-medium px-2 py-1 rounded-lg ${dtmfStatus.bgColor} ${dtmfStatus.color}`}
-                  >
-                    {lift.last_test_dtmf_at
-                      ? format(parseISO(lift.last_test_dtmf_at), "d MMM yyyy, HH:mm", {
-                          locale: nl,
-                        })
-                      : dtmfStatus.label}
                   </span>
                 </div>
               </div>
