@@ -85,13 +85,12 @@ export async function POST(request: NextRequest) {
     cleaned.push({ row: r, phone, index: i });
   });
 
-  // Fetch existing lifts with id + address + bedrijf for update matching.
+  // Fetch existing lifts with id + phone + address + bedrijf.
   // NB: one address+bedrijf can legitimately hold MULTIPLE lifts (building with
-  // several elevators, each with its own phone). Updating on this key is only
-  // safe when exactly ONE lift in the DB has it — otherwise we'd overwrite a
-  // sibling lift's number. Track all ids per key and skip ambiguous ones.
+  // several elevators, each with its own phone). Rows are therefore paired by
+  // phone FIRST; only the leftovers per key decide update/insert/ambiguous.
   const existingByPhone = new Set<string>();
-  const addressBedrijfToIds = new Map<string, string[]>(); // "addr|bedrijf" -> lift ids
+  const dbLiftsByKey = new Map<string, { id: string; phone: string }[]>();
 
   let from = 0;
   const PAGE = 1000;
@@ -110,57 +109,68 @@ export async function POST(request: NextRequest) {
     data.forEach((d) => {
       existingByPhone.add(d.phone_number);
       const key = `${(d.address || "").trim().toLowerCase()}|${(d.bedrijf || "").trim().toLowerCase()}`;
-      const ids = addressBedrijfToIds.get(key) || [];
-      ids.push(d.id);
-      addressBedrijfToIds.set(key, ids);
+      const lifts = dbLiftsByKey.get(key) || [];
+      lifts.push({ id: d.id, phone: d.phone_number });
+      dbLiftsByKey.set(key, lifts);
     });
     if (data.length < PAGE) break;
     from += PAGE;
   }
 
-  // Count CSV rows per address+bedrijf key: if the CSV itself has multiple rows
-  // for one key (multiple lifts in one building), an update match is ambiguous too.
-  const batchKeyCount = new Map<string, number>();
-  for (const c of cleaned) {
-    if (existingByPhone.has(c.phone)) continue; // will be skipped as duplicate anyway
-    const key = `${(c.row.address || "").trim().toLowerCase()}|${(c.row.bedrijf || "").trim().toLowerCase()}`;
-    batchKeyCount.set(key, (batchKeyCount.get(key) || 0) + 1);
-  }
-
-  // Categorize: insert, update (same address+bedrijf but different phone), or duplicate
+  // Categorize per address+bedrijf key, pairing by phone first:
+  // - CSV row whose phone already exists in DB        -> duplicate (skip)
+  // - leftover rows, 0 unmatched DB lifts on the key  -> NEW sibling lift (insert)
+  // - exactly 1 leftover row + 1 unmatched DB lift    -> unambiguous number update
+  // - more on both sides                              -> ambiguous (skip, manual)
   const toInsert: IncomingRow[] = [];
   const toUpdate: { id: string; phone: string }[] = [];
   const duplicates: number[] = [];
   const ambiguous: number[] = [];
   const seenInBatch = new Set<string>();
 
+  // Group leftover (non-duplicate) rows per key
+  const leftoverByKey = new Map<string, { row: IncomingRow; phone: string; index: number }[]>();
   for (const c of cleaned) {
     if (existingByPhone.has(c.phone) || seenInBatch.has(c.phone)) {
       duplicates.push(c.index);
       continue;
     }
     seenInBatch.add(c.phone);
-
     const key = `${(c.row.address || "").trim().toLowerCase()}|${(c.row.bedrijf || "").trim().toLowerCase()}`;
-    const existingIds = addressBedrijfToIds.get(key);
+    const rows = leftoverByKey.get(key) || [];
+    rows.push(c);
+    leftoverByKey.set(key, rows);
+  }
 
-    if (existingIds && (existingIds.length > 1 || (batchKeyCount.get(key) || 0) > 1)) {
-      // Multiple lifts share this address+bedrijf (in DB and/or in the CSV):
-      // updating would overwrite a sibling lift's number. Skip; needs manual fix.
-      ambiguous.push(c.index);
-    } else if (existingIds && existingIds.length === 1) {
-      toUpdate.push({ id: existingIds[0], phone: c.phone });
+  const pushInsert = (c: { row: IncomingRow; phone: string }) => {
+    toInsert.push({
+      phone_number: c.phone,
+      address: (c.row.address || "").trim(),
+      bedrijf: (c.row.bedrijf || "").trim(),
+      postcode: (c.row.postcode || "").trim(),
+      stad: (c.row.stad || "").trim(),
+      contactpersoon: c.row.contactpersoon?.trim() || undefined,
+      "extra-telefoon-nummer":
+        c.row["extra-telefoon-nummer"]?.trim() || undefined,
+    });
+  };
+
+  // A DB lift is "matched" when any CSV row (including duplicate-marked ones)
+  // carries its phone; only unmatched lifts are update candidates.
+  const allCsvPhones = new Set(cleaned.map((c) => c.phone));
+  for (const [key, rows] of leftoverByKey) {
+    const dbLifts = dbLiftsByKey.get(key) || [];
+    const unmatchedDbLifts = dbLifts.filter((l) => !allCsvPhones.has(l.phone));
+
+    if (unmatchedDbLifts.length === 0) {
+      // Every DB lift on this address is accounted for -> leftover rows are new sibling lifts
+      rows.forEach(pushInsert);
+    } else if (unmatchedDbLifts.length === 1 && rows.length === 1) {
+      // One lift with a stale number + one new number -> unambiguous update
+      toUpdate.push({ id: unmatchedDbLifts[0].id, phone: rows[0].phone });
     } else {
-      toInsert.push({
-        phone_number: c.phone,
-        address: (c.row.address || "").trim(),
-        bedrijf: (c.row.bedrijf || "").trim(),
-        postcode: (c.row.postcode || "").trim(),
-        stad: (c.row.stad || "").trim(),
-        contactpersoon: c.row.contactpersoon?.trim() || undefined,
-        "extra-telefoon-nummer":
-          c.row["extra-telefoon-nummer"]?.trim() || undefined,
-      });
+      // Multiple candidates on both sides: cannot tell which lift got which number
+      rows.forEach((c) => ambiguous.push(c.index));
     }
   }
 

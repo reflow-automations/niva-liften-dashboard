@@ -73,12 +73,12 @@ export async function POST(request: NextRequest) {
   }
 
   // Fetch all existing lifts (phone + address + bedrijf) from DB.
-  // Count lifts per address+bedrijf key: multiple lifts can legitimately share
-  // one building — an update match is only safe when the key is unique in the DB
-  // AND unique within the CSV batch (see import route).
+  // One address+bedrijf can legitimately hold multiple lifts. Rows are paired
+  // by phone first; only the leftovers per key decide update/insert/ambiguous
+  // (same logic as the import route).
   const admin = createAdminSupabaseClient();
   const existingByPhone = new Set<string>();
-  const addressBedrijfCount = new Map<string, number>(); // "address|bedrijf" -> # lifts
+  const dbPhonesByKey = new Map<string, string[]>(); // "address|bedrijf" -> phones
 
   let from = 0;
   const PAGE = 1000;
@@ -94,18 +94,12 @@ export async function POST(request: NextRequest) {
     data.forEach((d) => {
       existingByPhone.add(d.phone_number);
       const key = `${(d.address || "").trim().toLowerCase()}|${(d.bedrijf || "").trim().toLowerCase()}`;
-      addressBedrijfCount.set(key, (addressBedrijfCount.get(key) || 0) + 1);
+      const phones = dbPhonesByKey.get(key) || [];
+      phones.push(d.phone_number);
+      dbPhonesByKey.set(key, phones);
     });
     if (data.length < PAGE) break;
     from += PAGE;
-  }
-
-  // Count batch rows per key (excluding rows already in DB by phone)
-  const batchKeyCount = new Map<string, number>();
-  for (const row of validRows) {
-    if (existingByPhone.has(row.phone)) continue;
-    const key = `${row.address.toLowerCase()}|${row.bedrijf.toLowerCase()}`;
-    batchKeyCount.set(key, (batchKeyCount.get(key) || 0) + 1);
   }
 
   const db_duplicate_phones: string[] = [];
@@ -113,21 +107,31 @@ export async function POST(request: NextRequest) {
   const ambiguous_phones: string[] = [];
   const new_phones: string[] = [];
 
+  // Group non-duplicate rows per key
+  const leftoverByKey = new Map<string, { phone: string }[]>();
   for (const row of validRows) {
     if (existingByPhone.has(row.phone)) {
       db_duplicate_phones.push(row.phone);
+      continue;
+    }
+    const key = `${row.address.toLowerCase()}|${row.bedrijf.toLowerCase()}`;
+    const rows = leftoverByKey.get(key) || [];
+    rows.push({ phone: row.phone });
+    leftoverByKey.set(key, rows);
+  }
+
+  const allCsvPhones = new Set(validRows.map((r) => r.phone));
+  for (const [key, rows] of leftoverByKey) {
+    const dbPhones = dbPhonesByKey.get(key) || [];
+    const unmatchedDbLifts = dbPhones.filter((p) => !allCsvPhones.has(p));
+
+    if (unmatchedDbLifts.length === 0) {
+      // All DB lifts on this address accounted for -> new sibling lifts
+      rows.forEach((r) => new_phones.push(r.phone));
+    } else if (unmatchedDbLifts.length === 1 && rows.length === 1) {
+      update_phones.push(rows[0].phone);
     } else {
-      const key = `${row.address.toLowerCase()}|${row.bedrijf.toLowerCase()}`;
-      const dbCount = addressBedrijfCount.get(key) || 0;
-      if (dbCount === 1 && (batchKeyCount.get(key) || 0) === 1) {
-        update_phones.push(row.phone);
-      } else if (dbCount >= 1) {
-        // Address+bedrijf exists but holds multiple lifts (or CSV has multiple
-        // rows for it): can't tell which lift this number belongs to.
-        ambiguous_phones.push(row.phone);
-      } else {
-        new_phones.push(row.phone);
-      }
+      rows.forEach((r) => ambiguous_phones.push(r.phone));
     }
   }
 
