@@ -252,8 +252,12 @@ export default function ImportLiftenModal({ onClose, onImported }: Props) {
   const handleImport = async () => {
     setSubmitting(true);
     setServerError(null);
+    // Send ALL valid rows, not just new/update: the server pairs rows to
+    // existing lifts by phone per address+bedrijf, and needs the full batch
+    // to know which DB lifts are already accounted for. Sending only the
+    // "new" rows made an existing sibling lift look like an update target.
     const payload = previewRows
-      .filter((r) => r.status === "new" || r.status === "update")
+      .filter((r) => r.status !== "invalid")
       .map((r) => ({
         phone_number: r.normalizedPhone,
         address: r.data.address,
@@ -279,7 +283,7 @@ export default function ImportLiftenModal({ onClose, onImported }: Props) {
       setResult({
         inserted: json.inserted,
         updated: json.updated ?? 0,
-        duplicates: json.duplicates + counts.csv_duplicate + counts.db_duplicate,
+        duplicates: json.duplicates,
         invalid: json.invalid || [],
       });
       setStep("done");
