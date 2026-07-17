@@ -61,6 +61,9 @@ export default function GesprekDetailPage() {
   const supabase = createClient();
   const { isAdmin } = useAdmin();
   const [call, setCall] = useState<CallLog | null>(null);
+  const [ackHistory, setAckHistory] = useState<
+    { at: string; by: string | null; acknowledged: boolean }[]
+  >([]);
   const [loading, setLoading] = useState(true);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [adjacent, setAdjacent] = useState<{ prev: string | null; next: string | null }>({ prev: null, next: null });
@@ -96,6 +99,19 @@ export default function GesprekDetailPage() {
       setLoading(false);
     }
     fetchCall();
+
+    async function fetchAckHistory() {
+      try {
+        const res = await fetch(`/api/calls/acknowledge?call_id=${params.id}`);
+        if (res.ok) {
+          const json = await res.json();
+          setAckHistory(json.history || []);
+        }
+      } catch {
+        // historie is informatief; pagina blijft werken zonder
+      }
+    }
+    fetchAckHistory();
 
     async function fetchAdjacent() {
       const { data } = await supabase
@@ -147,6 +163,16 @@ export default function GesprekDetailPage() {
       setCall((prev) =>
         prev ? { ...prev, acknowledged_at: previous } : prev
       );
+    } else {
+      try {
+        const hist = await fetch(`/api/calls/acknowledge?call_id=${call.id}`);
+        if (hist.ok) {
+          const json = await hist.json();
+          setAckHistory(json.history || []);
+        }
+      } catch {
+        // historie verversen is best effort
+      }
     }
   }
 
@@ -399,6 +425,34 @@ export default function GesprekDetailPage() {
                 </div>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {/* Controle-historie (alleen voor onbekend-meldingen) */}
+      {call.call_type === "onbekend" && ackHistory.length > 0 && (
+        <div className="glass-card p-6">
+          <h2 className="text-lg font-semibold mb-3">Controle-historie</h2>
+          <div className="space-y-2 text-sm">
+            {ackHistory.map((h, i) => (
+              <div
+                key={i}
+                className="flex items-center justify-between py-2 border-b border-border-subtle last:border-b-0"
+              >
+                <span
+                  className={
+                    h.acknowledged ? "text-success" : "text-[#f97316]"
+                  }
+                >
+                  {h.acknowledged
+                    ? "Gemarkeerd als gecontroleerd"
+                    : "Markering gecontroleerd verwijderd"}
+                </span>
+                <span className="text-text-muted">
+                  {h.by || "onbekende gebruiker"} — {formatDate(h.at)}
+                </span>
+              </div>
+            ))}
           </div>
         </div>
       )}
