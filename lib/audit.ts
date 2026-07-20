@@ -8,6 +8,7 @@ export type AuditAction =
   | "lift_deleted"
   | "call_acknowledged"
   | "lifts_cleanup"
+  | "call_reclassified"
   | "user_login"
   | "user_logout";
 

@@ -65,6 +65,8 @@ export default function GesprekDetailPage() {
     { at: string; by: string | null; acknowledged: boolean }[]
   >([]);
   const [loading, setLoading] = useState(true);
+  const [reclassifyConfirm, setReclassifyConfirm] = useState(false);
+  const [reclassifyBusy, setReclassifyBusy] = useState(false);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [adjacent, setAdjacent] = useState<{ prev: string | null; next: string | null }>({ prev: null, next: null });
   const [isPlaying, setIsPlaying] = useState(false);
@@ -174,6 +176,30 @@ export default function GesprekDetailPage() {
         // historie verversen is best effort
       }
     }
+  }
+
+  async function reclassifyToTest() {
+    if (!call || reclassifyBusy) return;
+    setReclassifyBusy(true);
+    const res = await fetch("/api/calls/reclassify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ call_id: call.id }),
+    });
+    if (res.ok) {
+      const json = await res.json();
+      setCall((prev) =>
+        prev
+          ? {
+              ...prev,
+              call_type: "test",
+              acknowledged_at: json.acknowledged_at,
+            }
+          : prev
+      );
+    }
+    setReclassifyBusy(false);
+    setReclassifyConfirm(false);
   }
 
   const togglePlay = () => {
@@ -332,6 +358,34 @@ export default function GesprekDetailPage() {
             Gecontroleerd
           </label>
         )}
+        {call.call_type === "onbekend" &&
+          (reclassifyConfirm ? (
+            <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-sm font-medium bg-surface-hover border border-border">
+              Zeker weten?
+              <button
+                onClick={reclassifyToTest}
+                disabled={reclassifyBusy}
+                className="text-success hover:underline cursor-pointer disabled:opacity-50"
+              >
+                {reclassifyBusy ? "Bezig..." : "Ja, dit was een test"}
+              </button>
+              <button
+                onClick={() => setReclassifyConfirm(false)}
+                disabled={reclassifyBusy}
+                className="text-text-muted hover:underline cursor-pointer disabled:opacity-50"
+              >
+                Annuleer
+              </button>
+            </span>
+          ) : (
+            <button
+              onClick={() => setReclassifyConfirm(true)}
+              className="inline-flex items-center px-3 py-1.5 rounded-xl text-sm font-medium bg-surface-hover text-text-secondary border border-border hover:text-text-primary hover:border-accent transition-colors cursor-pointer"
+              title="Hertypeer deze melding naar 'Monteur test' als u na beluisteren vaststelt dat het een test was"
+            >
+              Dit was een test
+            </button>
+          ))}
       </div>
 
       {/* Info Grid */}
