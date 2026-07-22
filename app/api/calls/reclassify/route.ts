@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
 
   const { data: current } = await admin
     .from("call_logs")
-    .select("id, call_sid, call_type, acknowledged_at")
+    .select("id, call_sid, call_type, acknowledged_at, lift_id, start_time")
     .eq("id", call_id)
     .single();
 
@@ -71,6 +71,27 @@ export async function POST(request: NextRequest) {
 
   if (error) {
     return NextResponse.json({ error: "Failed to update call" }, { status: 500 });
+  }
+
+  // De normale weg naar last_test_at loopt via een n8n-webhook die de AI
+  // tijdens het live gesprek zelf aanroept zodra een test wordt bevestigd.
+  // Bij deze calls kwam de AI daar nooit aan toe (stilte/verhaspeling), dus
+  // die registratie is hier nooit gebeurd. Zet 'm alsnog, op de call-starttijd
+  // (niet op "nu"), en alleen als dat niet ouder is dan een eventuele
+  // inmiddels al geregistreerde, echte test.
+  if (current.lift_id && current.start_time) {
+    const { data: lift } = await admin
+      .from("lifts")
+      .select("last_test_at")
+      .eq("id", current.lift_id)
+      .single();
+
+    if (!lift?.last_test_at || new Date(current.start_time) > new Date(lift.last_test_at)) {
+      await admin
+        .from("lifts")
+        .update({ last_test_at: current.start_time })
+        .eq("id", current.lift_id);
+    }
   }
 
   await logAudit(admin, {
